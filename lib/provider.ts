@@ -361,15 +361,22 @@ export function guessMime(source: string, kind: ModelKind): string {
   return "image/png";
 }
 
-/** Ask the gateway which models it exposes. */
+/** Ask the gateway which models it exposes. Uses the saved key and auth header. */
 export async function listProviderModels(providerId = "openai-compatible"): Promise<unknown[]> {
   const provider = getProvider(providerId);
   if (!provider.apiKey) throw new Error("Chưa có API key");
   const res = await fetch(`${provider.baseUrl.replace(/\/+$/, "")}/models`, {
-    headers: { Authorization: `Bearer ${provider.apiKey}` },
+    headers: { ...authHeaders(provider), Accept: "application/json" },
     signal: AbortSignal.timeout(30_000),
   });
-  const json = (await res.json()) as { data?: unknown[]; error?: { message?: string } };
-  if (!res.ok) throw new Error(json.error?.message ?? `HTTP ${res.status}`);
-  return json.data ?? [];
+  const text = await res.text();
+  let json: { data?: unknown[]; error?: { message?: string }; message?: string } | unknown[] = {};
+  try {
+    json = text ? (JSON.parse(text) as typeof json) : {};
+  } catch {
+    throw new Error(res.ok ? "API không trả danh sách model" : `HTTP ${res.status}`);
+  }
+  if (Array.isArray(json)) return json;
+  if (!res.ok) throw new Error(json.error?.message ?? json.message ?? `HTTP ${res.status}`);
+  return Array.isArray(json.data) ? json.data : [];
 }
