@@ -65,8 +65,8 @@ export const dict: Dict = {
     en: "Double-click or right-click to add a block. Drag to pan, scroll to zoom. Hold Shift and drag to select several blocks.",
   },
   "canvas.emptyHint": {
-    vi: "Kéo từ chấm tròn để nối. Chấm sáng là cổng nối được — khác loại sẽ bị chặn.",
-    en: "Drag from a dot to connect. Lit dots can connect — a mismatched type is blocked.",
+    vi: "Mỗi khối có một điểm vào bên trái và một điểm ra bên phải. Mọi dây vào cùng một điểm — vai trò lấy theo loại khối nguồn.",
+    en: "Each block has one input on the left and one output on the right. Every wire meets that point — the role follows the source block.",
   },
   "canvas.legend.text": { vi: "Chữ", en: "Text" },
   "canvas.legend.image": { vi: "Ảnh", en: "Image" },
@@ -75,8 +75,8 @@ export const dict: Dict = {
   "canvas.connectTo": { vi: "Nối tới khối mới", en: "Connect to a new block" },
   "canvas.connectFrom": { vi: "Nối từ khối mới", en: "Connect from a new block" },
   "canvas.invalidLink": {
-    vi: "Không nối được — cổng này khác loại (chữ, ảnh hoặc video).",
-    en: "Can’t connect — this port is a different type (text, image or video).",
+    vi: "Không nối được — khối này không nhận loại dữ liệu từ khối nguồn.",
+    en: "Can’t connect — this block doesn’t accept that source.",
   },
   "canvas.deleteEdge": { vi: "Xoá nối", en: "Delete link" },
   "canvas.noMatch": { vi: "Không có khối phù hợp với cổng này.", en: "No block matches this port." },

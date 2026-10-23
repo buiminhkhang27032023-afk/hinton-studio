@@ -2,7 +2,7 @@
 
 import { withBasePath } from "@/lib/base-path";
 
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState, type ReactNode } from "react";
 import { Handle, NodeToolbar, Position, useReactFlow, type NodeProps } from "@xyflow/react";
 import clsx from "clsx";
 import {
@@ -12,132 +12,150 @@ import {
   Loader2,
   Play,
   Type,
-  Upload,
-  Wand2,
   ZoomIn,
   BrainCircuit,
   Shirt,
-  SplitSquareVertical,
-  Layers,
   RefreshCw,
   ArrowUp,
   Download,
 } from "lucide-react";
 import { useStudio, useModelsOfKind, useModelById } from "@/lib/studio-store";
 import { useNodeMenu, useRunNode } from "./run-context";
-import type { PortKind } from "./ports";
+import { sourceMediaRole, type PortKind } from "./ports";
 import { useUi } from "@/lib/ui-store";
 import type { StudioNodeData } from "@/lib/execute";
-
-const NODE_SHELL =
-  "group/node relative rounded-2xl border bg-[#141418] text-ink-100 shadow-[0_18px_48px_-24px_rgba(0,0,0,.9)]";
-
-const CARD_ON = "border-white/80 ring-1 ring-white/30";
-const CARD_OFF = "border-white/10 hover:border-white/25";
 
 function NodeActions({ id, canRun = true }: { id: string; canRun?: boolean }) {
   const { tr } = useUi();
   const run = useRunNode();
   const menu = useNodeMenu();
   return (
-    <NodeToolbar isVisible position={Position.Top} offset={10} align="center">
-      <div className="nodrag nopan flex items-center gap-0.5 rounded-full border border-white/10 bg-[#1a1a20]/95 p-1 shadow-xl backdrop-blur">
-        {canRun && (
-          <button
-            type="button"
-            onClick={() => run(id)}
-            className="rounded-full px-2.5 py-1 text-[12px] font-medium text-brass-300 hover:bg-white/10"
-          >
-            {tr("canvas.toolbar.run")}
-          </button>
-        )}
+    <div className="mt-2 flex items-center gap-1">
+      {canRun && (
         <button
           type="button"
-          onClick={() => menu.duplicate(id)}
-          className="rounded-full px-2.5 py-1 text-[12px] text-ink-200 hover:bg-white/10"
+          onClick={() => run(id)}
+          className="rounded-full bg-white px-2.5 py-1 text-[12px] font-medium text-black"
         >
-          {tr("canvas.duplicate")}
+          {tr("canvas.toolbar.run")}
         </button>
-        <button
-          type="button"
-          onClick={() => menu.remove(id)}
-          className="rounded-full px-2.5 py-1 text-[12px] text-red-300 hover:bg-white/10"
-        >
-          {tr("common.delete")}
-        </button>
-      </div>
-    </NodeToolbar>
-  );
-}
-
-function Port({
-  type,
-  id,
-  title,
-  color,
-  port,
-  accept,
-  className,
-}: {
-  type: "source" | "target";
-  id: string;
-  title: string;
-  color: string;
-  port?: PortKind;
-  accept?: string;
-  className?: string;
-}) {
-  return (
-    <Handle
-      type={type}
-      position={type === "source" ? Position.Right : Position.Left}
-      id={id}
-      title={title}
-      data-port={port}
-      data-accept={accept}
-      className={clsx("!border-[2.5px] !border-[#0b0b0e]", color, className)}
-    />
-  );
-}
-
-function StatusPill({ data }: { data: StudioNodeData }) {
-  const { tr } = useUi();
-  if (!data.status || data.status === "idle") return null;
-  const map = {
-    running: { icon: Loader2, text: tr("node.running"), tone: "bg-brass-700/25 text-brass-300" },
-    done: { icon: Check, text: tr("node.done"), tone: "bg-emerald-900/35 text-emerald-300" },
-    error: { icon: AlertCircle, text: tr("node.failed"), tone: "bg-red-950/70 text-red-300" },
-  } as const;
-  const { icon: Icon, text, tone } = map[data.status as keyof typeof map] ?? map.running;
-  return (
-    <span className={clsx("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium", tone)}>
-      <Icon size={10} className={data.status === "running" ? "animate-spin" : ""} />
-      {text}
-    </span>
-  );
-}
-
-function NodeHeader({
-  icon: Icon,
-  title,
-  data,
-  accent,
-}: {
-  icon: typeof Type;
-  title: string;
-  data: StudioNodeData;
-  accent: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
-      <div className="flex items-center gap-2">
-        <span className={clsx("grid h-6 w-6 place-items-center rounded-md", accent)}>
-          <Icon size={12.5} strokeWidth={2.2} />
-        </span>
-        <span className="text-[12.5px] font-medium tracking-tight text-ink-100">{title}</span>
-      </div>
-      <StatusPill data={data} />
+      )}
+      <button type="button" onClick={() => menu.duplicate(id)} className="rounded-full px-2.5 py-1 text-[12px] text-white/80 hover:bg-white/10">
+        {tr("canvas.duplicate")}
+      </button>
+      <button type="button" onClick={() => menu.remove(id)} className="rounded-full px-2.5 py-1 text-[12px] text-red-300 hover:bg-white/10">
+        {tr("common.delete")}
+      </button>
     </div>
+  );
+}
+
+/** TapNow-style node: the picture is the node. Settings only show once it is selected. */
+function TapFrame({
+  id,
+  selected,
+  label,
+  icon: Icon,
+  data,
+  preview,
+  video,
+  text,
+  canRun = true,
+  busy,
+  width = 176,
+  onMediaClick,
+  onDrop,
+  editor,
+  children,
+}: {
+  id: string;
+  selected?: boolean;
+  label: string;
+  icon: typeof ImageIcon;
+  data: StudioNodeData;
+  preview?: string;
+  video?: string;
+  text?: string;
+  canRun?: boolean;
+  busy?: boolean;
+  width?: number;
+  onMediaClick?: () => void;
+  onDrop?: (event: React.DragEvent) => void;
+  editor?: ReactNode;
+  children?: ReactNode;
+}) {
+  const ready = data.status === "done" || Boolean(preview || video);
+  return (
+    <div
+      className="relative"
+      style={{ width }}
+      onDragOver={onDrop ? (event) => event.preventDefault() : undefined}
+      onDrop={onDrop}
+    >
+      {selected && (
+        <NodeToolbar isVisible position={Position.Bottom} offset={12} align="center">
+          <div className="nodrag nopan w-[280px] rounded-2xl border border-white/10 bg-[#141414]/95 p-2.5 text-white shadow-[0_18px_50px_rgba(0,0,0,.7)]">
+            {editor}
+            <NodeActions id={id} canRun={canRun} />
+          </div>
+        </NodeToolbar>
+      )}
+      <div className="pointer-events-none absolute -top-[22px] left-0 flex max-w-full items-center gap-1 text-[12.5px] font-medium text-white">
+        <Icon size={13} strokeWidth={1.8} />
+        <span className="truncate">{label}</span>
+        {ready && data.status !== "running" && data.status !== "error" && <Check size={12} strokeWidth={2.6} />}
+        {data.status === "running" && <Loader2 size={12} className="animate-spin text-white/70" />}
+        {data.status === "error" && <AlertCircle size={12} className="text-red-400" />}
+      </div>
+      <div
+        className={clsx(
+          "overflow-hidden rounded-[18px] bg-[#141414]",
+          selected && "outline outline-[1.5px] outline-white",
+        )}
+        style={text != null ? { minHeight: 120 } : { aspectRatio: "3 / 4" }}
+        onClick={onMediaClick}
+      >
+        {video ? (
+          <video src={withBasePath(video)} className="h-full w-full object-cover" muted playsInline />
+        ) : preview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={withBasePath(preview)} alt="" className="h-full w-full object-cover" />
+        ) : text != null ? (
+          <p className={clsx("line-clamp-6 p-3 text-[12.5px] leading-relaxed", text ? "text-white/90" : "text-white/35")}>
+            {text || "Nhập câu lệnh…"}
+          </p>
+        ) : (
+          <span className="grid h-full place-items-center text-white/25">
+            {busy ? <Loader2 size={20} className="animate-spin" /> : <Icon size={26} strokeWidth={1.3} />}
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** One input on the left, one output on the right. Both sit on the vertical center. */
+function NodePorts({ out, accept }: { out: PortKind; accept?: string }) {
+  return (
+    <>
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="in"
+        title="Đầu vào"
+        data-accept={accept}
+        className="!border-2 !border-black !bg-white"
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="out"
+        title="Đầu ra"
+        data-port={out}
+        className="!border-2 !border-black !bg-white"
+      />
+    </>
   );
 }
 
@@ -146,35 +164,28 @@ function NodeHeader({
 export const PromptNode = memo(function PromptNode({ id, data, selected }: NodeProps) {
   const { tr } = useUi();
   const update = useNodeUpdater(id);
+  const nodeData = data as StudioNodeData;
   return (
-    <div
-      className={clsx(
-        NODE_SHELL,
-        "w-[300px]",
-        selected ? CARD_ON : CARD_OFF,
-      )}
-    >
-      {selected && <NodeActions id={id} canRun={false} />}
-      <NodeHeader
-        icon={Type}
-        title={tr("node.prompt")}
-        data={data as StudioNodeData}
-        accent="bg-violet-900/50 text-violet-soft"
-      />
-      <div className="p-3">
+    <TapFrame
+      id={id}
+      selected={selected}
+      label="Chữ"
+      icon={Type}
+      data={nodeData}
+      text={nodeData.text ?? ""}
+      canRun={false}
+      width={200}
+      editor={
         <textarea
-          className="field nodrag min-h-[104px] text-[13px]"
+          className="field nodrag min-h-[96px] text-[13px]"
           placeholder={tr("node.promptPlaceholder")}
-          value={(data as StudioNodeData).text ?? ""}
+          value={nodeData.text ?? ""}
           onChange={(event) => update({ text: event.target.value })}
         />
-        <div className="mt-2 flex items-center justify-between text-[11px] text-ink-500">
-          <span>{((data as StudioNodeData).text ?? "").length} ký tự</span>
-          <span>{tr("canvas.connectionHint")}</span>
-        </div>
-      </div>
-      <Port type="source" id="prompt" title="Chữ — kéo để nối" color="!bg-violet-400" port="text" />
-    </div>
+      }
+    >
+      <NodePorts out="text" />
+    </TapFrame>
   );
 });
 
@@ -208,54 +219,38 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
   const preview = nodeData.imageUrl || nodeData.result?.url;
 
   return (
-    <div
-      className={clsx(NODE_SHELL, "w-[260px]", selected ? CARD_ON : CARD_OFF)}
-      onDragOver={(event) => event.preventDefault()}
+    <TapFrame
+      id={id}
+      selected={selected}
+      label="Ảnh"
+      icon={ImageIcon}
+      data={nodeData}
+      preview={preview}
+      canRun={false}
+      busy={busy}
+      onMediaClick={() => selected && inputRef.current?.click()}
       onDrop={(event) => {
-        event.preventDefault();
         const file = event.dataTransfer.files?.[0];
         if (file) upload(file);
       }}
-    >
-      {selected && <NodeActions id={id} canRun={false} />}
-      <NodeHeader
-        icon={ImageIcon}
-        title={tr("node.image")}
-        data={nodeData}
-        accent="bg-sky-500/15 text-sky-300"
-      />
-      <div className="p-3">
-        <button
-          onClick={() => inputRef.current?.click()}
-          className={clsx(
-            "relative grid w-full overflow-hidden rounded-lg border border-dashed transition",
-            preview ? "border-transparent" : "border-white/15 hover:border-brass-500/60 hover:bg-white/[0.03]",
-          )}
-          style={{ aspectRatio: "4/3" }}
-        >
-          {preview ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={withBasePath(preview)} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <span className="flex flex-col items-center justify-center gap-1.5 px-4 text-center text-[12px] text-ink-500">
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-              {tr("node.uploadHint")}
-            </span>
-          )}
+      editor={
+        <button type="button" className="nodrag w-full rounded-xl bg-white/10 py-2 text-[12.5px] text-white" onClick={() => inputRef.current?.click()}>
+          {busy ? "Đang tải…" : tr("node.uploadHint")}
         </button>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) upload(file);
-          }}
-        />
-      </div>
-      <Port type="source" id="image" title="Ảnh — kéo để nối" color="!bg-sky-400" port="image" />
-    </div>
+      }
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) upload(file);
+        }}
+      />
+      <NodePorts out="image" />
+    </TapFrame>
   );
 });
 
@@ -301,131 +296,81 @@ export const GenerateNode = memo(function GenerateNode({ id, data, selected }: N
   const result = nodeData.result;
   const imageTags = useConnectedImageTags(id);
 
+  const isVideo = nodeData.modelKind === "video";
   return (
-    <div
-      className={clsx(NODE_SHELL, "w-[300px]", selected ? CARD_ON : CARD_OFF)}
-    >
-      {selected && <NodeActions id={id} />}
-      <Port type="target" id="prompt" title="Nhận chữ" color="!bg-violet-400" accept="text" className="!top-[38%]" />
-      <Port type="target" id="image" title="Nhận ảnh" color="!bg-sky-400" accept="image" className="!top-[62%]" />
-      <NodeHeader
-        icon={nodeData.modelKind === "video" ? Play : Wand2}
-        title={nodeData.modelKind === "video" ? "Tạo video" : "Tạo ảnh"}
-        data={nodeData}
-        accent="bg-brass-500/20 text-brass-300"
-      />
-
-      <div className="space-y-2.5 p-3">
-        <MentionTextarea
-          className="field nodrag min-h-[72px] text-[12.5px]"
-          placeholder={tr("node.promptPlaceholder")}
-          value={nodeData.prompt ?? ""}
-          onChange={(next) => update({ prompt: next })}
-          tags={imageTags}
-        />
-        {imageTags.length > 1 && (
-          <div className="flex flex-wrap gap-1.5">
-            {imageTags.map((tag) => (
-              <span
-                key={tag.label}
-                className="flex items-center gap-1 rounded-full border border-ink-700 bg-ink-900/70 px-1.5 py-0.5 text-[10px] text-ink-400"
-              >
-                {tag.preview && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={withBasePath(tag.preview)} alt="" className="h-3.5 w-3.5 rounded-full object-cover" />
-                )}
-                @{tag.label}
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          <PillSelect
-            value={nodeData.modelId ?? ""}
-            onChange={(value) => update(value.startsWith("iooai:") ? { modelId: value, duration: 10, resolution: "720p", aspect: "16:9" } : { modelId: value })}
-            className="max-w-[108px]"
-            options={[
-              { value: "", label: models.length ? tr("node.model") : tr("node.noModel") },
-              ...models.map((item) => ({ value: item.id, label: item.label })),
-            ]}
+    <TapFrame
+      id={id}
+      selected={selected}
+      label={isVideo ? "Video" : "Ảnh"}
+      icon={isVideo ? Play : ImageIcon}
+      data={nodeData}
+      preview={result?.kind === "image" ? result.url : undefined}
+      video={result?.kind === "video" ? result.url : undefined}
+      editor={
+        <div className="space-y-2">
+          <MentionTextarea
+            className="field nodrag min-h-[72px] text-[12.5px]"
+            placeholder={tr("node.promptPlaceholder")}
+            value={nodeData.prompt ?? ""}
+            onChange={(next) => update({ prompt: next })}
+            tags={imageTags}
           />
-          <PillSelect
-            value={nodeData.aspect ?? "16:9"}
-            onChange={(value) => update({ aspect: value })}
-            options={["16:9", "9:16", "1:1", "4:5", "3:2", "2:3"].map((ratio) => ({ value: ratio, label: ratio }))}
-          />
-          <PillSelect
-            value={model?.provider === "iooai" ? (nodeData.resolution === "1080p" ? "1080p" : "720p") : nodeData.resolution ?? "480p"}
-            onChange={(value) => update({ resolution: value })}
-            options={[
-              ...(model?.provider === "iooai" ? [] : [{ value: "480p", label: "480p" }]),
-              { value: "720p", label: "720p" },
-              { value: "1080p", label: "1080p" },
-            ]}
-          />
-          {nodeData.modelKind === "video" ? (
+          <div className="flex flex-wrap items-center gap-1.5">
             <PillSelect
-              value={String(nodeData.duration ?? 6)}
-              onChange={(value) => update({ duration: Number(value) })}
-              options={durationOptions(model?.id).map((seconds) => ({ value: String(seconds), label: `${seconds}s` }))}
+              value={nodeData.modelId ?? ""}
+              onChange={(value) => update(value.startsWith("iooai:") ? { modelId: value, duration: 10, resolution: "720p", aspect: "16:9" } : { modelId: value })}
+              className="max-w-[120px]"
+              options={[
+                { value: "", label: models.length ? tr("node.model") : tr("node.noModel") },
+                ...models.map((item) => ({ value: item.id, label: item.label })),
+              ]}
             />
-          ) : (
-            <button
-              className="nodrag rounded-full border border-ink-700 bg-ink-900/80 px-2.5 py-1 text-[11px] text-ink-300 hover:border-ink-600 hover:text-ink-100"
-              onClick={() => update({ seed: Math.floor(Math.random() * 1_000_000) })}
-              title={tr("node.seed")}
-            >
-              🎲 {nodeData.seed ?? "—"}
-            </button>
-          )}
-
-          <button
-            onClick={() => run(id)}
-            disabled={nodeData.status === "running"}
-            title={nodeData.status === "running" ? tr("node.running") : tr("canvas.toolbar.run")}
-            className="nodrag ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brass-500 text-ink-950 transition hover:bg-brass-400 disabled:opacity-50"
-          >
-            {nodeData.status === "running" ? <Loader2 size={13} className="animate-spin" /> : <ArrowUp size={14} strokeWidth={2.4} />}
-          </button>
-        </div>
-
-        {result && (
-          <div className="overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
-            {result.kind === "video" ? (
-              <video src={withBasePath(result.url)} controls className="w-full" />
-            ) : result.kind === "image" ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={withBasePath(result.url)} alt="" className="w-full" />
+            <PillSelect
+              value={nodeData.aspect ?? "16:9"}
+              onChange={(value) => update({ aspect: value })}
+              options={["16:9", "9:16", "1:1", "4:5", "3:2", "2:3"].map((ratio) => ({ value: ratio, label: ratio }))}
+            />
+            <PillSelect
+              value={model?.provider === "iooai" ? (nodeData.resolution === "1080p" ? "1080p" : "720p") : nodeData.resolution ?? "480p"}
+              onChange={(value) => update({ resolution: value })}
+              options={[
+                ...(model?.provider === "iooai" ? [] : [{ value: "480p", label: "480p" }]),
+                { value: "720p", label: "720p" },
+                { value: "1080p", label: "1080p" },
+              ]}
+            />
+            {isVideo ? (
+              <PillSelect
+                value={String(nodeData.duration ?? 6)}
+                onChange={(value) => update({ duration: Number(value) })}
+                options={durationOptions(model?.id).map((seconds) => ({ value: String(seconds), label: `${seconds}s` }))}
+              />
             ) : (
-              <div className="max-h-32 overflow-y-auto whitespace-pre-wrap p-2 text-[11.5px] text-ink-300">
-                {String(result.meta?.text ?? "")}
-              </div>
+              <button
+                className="nodrag rounded-full border border-white/15 px-2.5 py-1 text-[11px] text-white/70"
+                onClick={() => update({ seed: Math.floor(Math.random() * 1_000_000) })}
+                title={tr("node.seed")}
+              >
+                🎲 {nodeData.seed ?? "—"}
+              </button>
             )}
+            <button
+              onClick={() => run(id)}
+              disabled={nodeData.status === "running"}
+              className="nodrag ml-auto grid h-7 w-7 place-items-center rounded-full bg-white text-black disabled:opacity-50"
+            >
+              {nodeData.status === "running" ? <Loader2 size={13} className="animate-spin" /> : <ArrowUp size={14} />}
+            </button>
           </div>
-        )}
-
-        {nodeData.error && (
-          <p className="rounded-md bg-red-950/50 px-2 py-1.5 text-[11.5px] leading-snug text-red-300">
-            {nodeData.error}
-          </p>
-        )}
-
-        {!nodeData.modelId && models.length > 0 && (
-          <p className="rounded-md border border-amber-400/30 bg-amber-950/40 px-2 py-1 text-[10.5px] text-amber-200">
-            Chọn model ở hàng phía trên để bắt đầu.
-          </p>
-        )}
-      </div>
-
-      <Port
-        type="source"
-        id="result"
-        title={nodeData.modelKind === "video" ? "Video — kéo để nối" : "Ảnh — kéo để nối"}
-        color={nodeData.modelKind === "video" ? "!bg-amber-400" : "!bg-sky-400"}
-        port={nodeData.modelKind === "video" ? "video" : "image"}
-      />
-    </div>
+          {nodeData.error && <p className="text-[11.5px] text-red-300">{nodeData.error}</p>}
+          {result?.kind !== "image" && result?.kind !== "video" && result?.meta?.text != null && (
+            <p className="max-h-24 overflow-y-auto whitespace-pre-wrap text-[11.5px] text-white/70">{String(result.meta.text)}</p>
+          )}
+        </div>
+      }
+    >
+      <NodePorts out={isVideo ? "video" : "image"} accept={isVideo ? "text image video" : "text image"} />
+    </TapFrame>
   );
 });
 
@@ -439,72 +384,47 @@ export const UpscaleNode = memo(function UpscaleNode({ id, data, selected }: Nod
   const run = useRunNode();
 
   return (
-    <div
-      className={clsx(NODE_SHELL, "w-[270px]", selected ? CARD_ON : CARD_OFF)}
-    >
-      {selected && <NodeActions id={id} />}
-      <Port type="target" id="image" title="Nhận ảnh" color="!bg-sky-400" accept="image" />
-      <NodeHeader
-        icon={ZoomIn}
-        title={tr("node.upscale")}
-        data={nodeData}
-        accent="bg-emerald-900/45 text-emerald-300"
-      />
-      <div className="space-y-2.5 p-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <PillSelect
-            value={nodeData.modelId ?? ""}
-            onChange={(value) => update(value.startsWith("iooai:") ? { modelId: value, duration: 10, resolution: "720p", aspect: "16:9" } : { modelId: value })}
-            className="max-w-[120px]"
-            options={[
-              { value: "", label: models.length ? tr("node.model") : tr("node.noModel") },
-              ...models.map((item) => ({ value: item.id, label: item.label })),
-            ]}
-          />
-          {[2, 4, 8].map((scale) => (
-            <button
-              key={scale}
-              onClick={() => update({ scale })}
-              className={clsx(
-                "nodrag rounded-full border px-2.5 py-1 text-[11px] transition",
-                (nodeData.scale ?? 2) === scale
-                  ? "border-brass-500/70 bg-brass-500/20 text-brass-200"
-                  : "border-white/15 text-ink-300 hover:border-white/30",
-              )}
-            >
-              ×{scale}
-            </button>
-          ))}
-          {!nodeData.result && (
-            <button
-              onClick={() => run(id)}
-              disabled={nodeData.status === "running"}
-              className="nodrag ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brass-500 text-ink-950 transition hover:bg-brass-400 disabled:opacity-50"
-            >
-              {nodeData.status === "running" ? <Loader2 size={13} className="animate-spin" /> : <ArrowUp size={14} strokeWidth={2.4} />}
-            </button>
-          )}
-        </div>
-        {nodeData.result && (
-          <div className="group/card relative overflow-hidden rounded-lg border border-white/10">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={withBasePath(nodeData.result.url)} alt="" className="w-full" />
-            <button
-              onClick={() => run(id)}
-              disabled={nodeData.status === "running"}
-              title="Tạo lại"
-              className="nodrag absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-ink-950/70 text-white opacity-70 backdrop-blur transition hover:bg-ink-950/90 hover:opacity-100"
-            >
+    <TapFrame
+      id={id}
+      selected={selected}
+      label="Ảnh"
+      icon={ZoomIn}
+      data={nodeData}
+      preview={nodeData.result?.url}
+      editor={
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <PillSelect
+              value={nodeData.modelId ?? ""}
+              onChange={(value) => update({ modelId: value })}
+              className="max-w-[140px]"
+              options={[
+                { value: "", label: models.length ? tr("node.model") : tr("node.noModel") },
+                ...models.map((item) => ({ value: item.id, label: item.label })),
+              ]}
+            />
+            {[2, 4, 8].map((scale) => (
+              <button
+                key={scale}
+                onClick={() => update({ scale })}
+                className={clsx(
+                  "nodrag rounded-full border px-2.5 py-1 text-[11px]",
+                  (nodeData.scale ?? 2) === scale ? "border-white bg-white text-black" : "border-white/20 text-white/70",
+                )}
+              >
+                ×{scale}
+              </button>
+            ))}
+            <button onClick={() => run(id)} disabled={nodeData.status === "running"} className="nodrag ml-auto grid h-7 w-7 place-items-center rounded-full bg-white text-black disabled:opacity-50">
               {nodeData.status === "running" ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
             </button>
           </div>
-        )}
-        {nodeData.error && (
-          <p className="rounded-md bg-red-950/50 px-2 py-1.5 text-[11.5px] text-red-300">{nodeData.error}</p>
-        )}
-      </div>
-      <Port type="source" id="result" title="Ảnh — kéo để nối" color="!bg-sky-400" port="image" />
-    </div>
+          {nodeData.error && <p className="text-[11.5px] text-red-300">{nodeData.error}</p>}
+        </div>
+      }
+    >
+      <NodePorts out="image" accept="image" />
+    </TapFrame>
   );
 });
 
@@ -518,61 +438,42 @@ export const TrainNode = memo(function TrainNode({ id, data, selected }: NodePro
   const run = useRunNode();
 
   return (
-    <div
-      className={clsx(NODE_SHELL, "w-[280px]", selected ? CARD_ON : CARD_OFF)}
-    >
-      {selected && <NodeActions id={id} />}
-      <Port type="target" id="images" title="Nhận ảnh mẫu" color="!bg-sky-400" accept="image" />
-      <NodeHeader
-        icon={BrainCircuit}
-        title={tr("node.train")}
-        data={nodeData}
-        accent="bg-fuchsia-900/40 text-fuchsia-300"
-      />
-      <div className="space-y-2.5 p-3">
-        <input
-          className="field nodrag text-[12px]"
-          placeholder="Tên model (vd: ao-dai-lora)"
-          value={nodeData.name ?? ""}
-          onChange={(event) => update({ name: event.target.value })}
-        />
-        <div className="flex flex-wrap items-center gap-1.5">
-          <PillSelect
-            value={nodeData.modelId ?? ""}
-            onChange={(value) => update(value.startsWith("iooai:") ? { modelId: value, duration: 10, resolution: "720p", aspect: "16:9" } : { modelId: value })}
-            className="max-w-[140px]"
-            options={[
-              { value: "", label: models.length ? tr("node.model") : tr("node.noModel") },
-              ...models.map((item) => ({ value: item.id, label: item.label })),
-            ]}
-          />
-          <span className="flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-1 text-[11px] text-ink-300">
-            Steps
-            <input
-              type="number"
-              className="nodrag w-14 bg-transparent text-right text-ink-100 outline-none"
-              value={nodeData.steps ?? 1000}
-              onChange={(event) => update({ steps: Number(event.target.value) })}
+    <TapFrame
+      id={id}
+      selected={selected}
+      label="Train"
+      icon={BrainCircuit}
+      data={nodeData}
+      text={nodeData.name || "Model của tôi"}
+      editor={
+        <div className="space-y-2">
+          <input className="field nodrag text-[12px]" placeholder="Tên model" value={nodeData.name ?? ""} onChange={(event) => update({ name: event.target.value })} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <PillSelect
+              value={nodeData.modelId ?? ""}
+              onChange={(value) => update({ modelId: value })}
+              className="max-w-[150px]"
+              options={[
+                { value: "", label: models.length ? tr("node.model") : tr("node.noModel") },
+                ...models.map((item) => ({ value: item.id, label: item.label })),
+              ]}
             />
-          </span>
+            <span className="flex items-center gap-1 rounded-full border border-white/15 px-2 py-1 text-[11px] text-white/70">
+              Steps
+              <input type="number" className="nodrag w-14 bg-transparent text-right outline-none" value={nodeData.steps ?? 1000} onChange={(event) => update({ steps: Number(event.target.value) })} />
+            </span>
+          </div>
+          <p className="text-[11px] text-white/45">Nối các khối Ảnh vào để làm dữ liệu huấn luyện.</p>
+          {nodeData.error && <p className="text-[11.5px] text-red-300">{nodeData.error}</p>}
+          <button onClick={() => run(id)} disabled={nodeData.status === "running"} className="nodrag flex w-full items-center justify-center gap-1.5 rounded-xl bg-white py-1.5 text-[12px] font-medium text-black disabled:opacity-50">
+            {nodeData.status === "running" ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+            {nodeData.status === "running" ? tr("node.running") : tr("node.run")}
+          </button>
         </div>
-        <p className="text-[10.5px] leading-relaxed text-ink-500">
-          Nối các khối Ảnh vào để làm bộ dữ liệu huấn luyện.
-        </p>
-        {nodeData.error && (
-          <p className="rounded-md bg-red-950/50 px-2 py-1.5 text-[11.5px] text-red-300">{nodeData.error}</p>
-        )}
-        <button
-          onClick={() => run(id)}
-          disabled={nodeData.status === "running"}
-          className="nodrag flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-brass-500 text-[12px] font-medium text-ink-950 transition hover:bg-brass-400 disabled:opacity-50"
-        >
-          {nodeData.status === "running" ? <Loader2 size={12.5} className="animate-spin" /> : <Play size={12.5} />}
-          {nodeData.status === "running" ? tr("node.running") : tr("node.run")}
-        </button>
-      </div>
-      <Port type="source" id="result" title="Kết quả — kéo để nối" color="!bg-emerald-400" port="any" />
-    </div>
+      }
+    >
+      <NodePorts out="any" accept="image" />
+    </TapFrame>
   );
 });
 
@@ -583,47 +484,31 @@ export const OutputNode = memo(function OutputNode({ id, data, selected }: NodeP
   const nodeData = data as StudioNodeData;
   const asset = nodeData.result;
 
+  const isVideo = asset?.kind === "video";
   return (
-    <div
-      className={clsx(NODE_SHELL, "w-[300px]", selected ? CARD_ON : CARD_OFF)}
-    >
-      {selected && <NodeActions id={id} canRun={false} />}
-      <Port type="target" id="in" title="Nhận kết quả" color="!bg-emerald-400" accept="text image video any" />
-      <NodeHeader
-        icon={Check}
-        title={tr("node.output")}
-        data={nodeData}
-        accent="bg-emerald-900/45 text-emerald-300"
-      />
-      <div className="p-3">
-        {asset ? (
-          <div className="group/card relative overflow-hidden rounded-lg border border-white/10">
-            {asset.kind === "video" ? (
-              <video src={withBasePath(asset.url)} controls className="w-full" />
-            ) : asset.kind === "image" ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={withBasePath(asset.url)} alt="" className="w-full" />
-            ) : (
-              <div className="whitespace-pre-wrap bg-ink-900 p-2 text-[11.5px] text-ink-300">
-                {String(asset.meta?.text ?? "")}
-              </div>
-            )}
-            <a
-              href={withBasePath(asset.url)}
-              download
-              title={tr("common.download")}
-              className="nodrag absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-ink-950/70 text-white opacity-70 backdrop-blur transition hover:bg-ink-950/90 hover:opacity-100"
-            >
-              <Download size={13} />
-            </a>
-          </div>
+    <TapFrame
+      id={id}
+      selected={selected}
+      label={isVideo ? "Video" : "Ảnh"}
+      icon={isVideo ? Play : ImageIcon}
+      data={nodeData}
+      preview={asset?.kind === "image" ? asset.url : undefined}
+      video={isVideo ? asset?.url : undefined}
+      text={asset && asset.kind !== "image" && asset.kind !== "video" ? String(asset.meta?.text ?? "") : undefined}
+      canRun={false}
+      editor={
+        asset ? (
+          <a href={withBasePath(asset.url)} download className="nodrag flex items-center justify-center gap-1.5 rounded-xl bg-white py-1.5 text-[12px] font-medium text-black">
+            <Download size={13} />
+            {tr("common.download")}
+          </a>
         ) : (
-          <p className="py-6 text-center text-[11.5px] text-ink-500">
-            Nối một khối kết quả vào đây để xem trước.
-          </p>
-        )}
-      </div>
-    </div>
+          <p className="text-[12px] text-white/50">Nối một khối kết quả vào đây để xem trước.</p>
+        )
+      }
+    >
+      <NodePorts out={isVideo ? "video" : "any"} accept="text image video any" />
+    </TapFrame>
   );
 });
 
@@ -635,85 +520,35 @@ export const FashionTryOnNode = memo(function FashionTryOnNode({ id, data, selec
   const nodeData = data as StudioNodeData;
   const run = useRunNode();
   const result = nodeData.result;
-  const garmentPreview = useConnectedPreview(id, "garment");
+  const garmentPreview = useConnectedPreview(id, 1);
 
   return (
-    <div
-      className={clsx(NODE_SHELL, "w-[270px]", selected ? CARD_ON : CARD_OFF)}
-    >
-      {selected && <NodeActions id={id} />}
-      <Port type="target" id="model" title="Người mẫu (ảnh)" color="!bg-rose-400" accept="image" className="!top-[28%]" />
-      <Port type="target" id="garment" title="Trang phục (ảnh)" color="!bg-amber-400" accept="image" className="!top-[56%]" />
-      <Port type="target" id="prompt" title="Nhận chữ" color="!bg-violet-400" accept="text" className="!top-[84%]" />
-
-      <NodeHeader
-        icon={Shirt}
-        title="Thử Đồ AI"
-        data={nodeData}
-        accent="bg-rose-900/40 text-rose-300"
-      />
-
-      <div className="space-y-2 p-2.5">
-        <textarea
-          className="field nodrag min-h-[36px] text-[11.5px]"
-          placeholder="Mô tả phối đồ (không bắt buộc)"
-          value={nodeData.prompt ?? ""}
-          onChange={(event) => update({ prompt: event.target.value })}
-        />
-
-        {result?.url && (
-          <div className="group/card relative overflow-hidden rounded-xl border border-white/10 bg-[#101014]">
-            <div className="flex items-center justify-between bg-white/[0.04] px-2.5 py-1.5">
-              <span className="text-[11px] font-semibold tracking-tight text-ink-100">Today&apos;s outfit</span>
-              {garmentPreview && (
-                <span className="flex items-center gap-1">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={withBasePath(garmentPreview)}
-                    alt=""
-                    className="h-5 w-5 rounded border border-ink-300 object-cover"
-                    title="Trang phục gốc"
-                  />
-                </span>
-              )}
-            </div>
-            <div className="relative">
-              {result.kind === "video" ? (
-                <video src={withBasePath(result.url)} controls className="aspect-[9/16] w-full object-cover" />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={withBasePath(result.url)} alt="" className="aspect-[4/3] w-full object-cover" />
-              )}
-              <button
-                onClick={() => run(id)}
-                disabled={nodeData.status === "running"}
-                title="Tạo lại"
-                className="nodrag absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-ink-950/70 text-white opacity-70 backdrop-blur transition hover:bg-ink-950/90 hover:opacity-100"
-              >
-                {nodeData.status === "running" ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <RefreshCw size={13} />
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!result?.url && (
-          <button
-            onClick={() => run(id)}
-            disabled={nodeData.status === "running"}
-            className="nodrag flex w-full items-center justify-center gap-2 rounded-lg bg-brass-500 py-2 text-[12.5px] font-medium text-ink-950 hover:bg-brass-400 disabled:opacity-50"
-          >
-            {nodeData.status === "running" ? <Loader2 size={12.5} className="animate-spin" /> : <Play size={12.5} />}
+    <TapFrame
+      id={id}
+      selected={selected}
+      label="Ảnh"
+      icon={Shirt}
+      data={nodeData}
+      preview={result?.kind === "video" ? garmentPreview : result?.url || garmentPreview}
+      video={result?.kind === "video" ? result.url : undefined}
+      editor={
+        <div className="space-y-2">
+          <textarea
+            className="field nodrag min-h-[64px] text-[12.5px]"
+            placeholder="Mô tả phối đồ (không bắt buộc)"
+            value={nodeData.prompt ?? ""}
+            onChange={(event) => update({ prompt: event.target.value })}
+          />
+          <p className="text-[11px] text-white/45">Ảnh thứ nhất là người mẫu, ảnh thứ hai là trang phục.</p>
+          <button onClick={() => run(id)} disabled={nodeData.status === "running"} className="nodrag flex w-full items-center justify-center gap-1.5 rounded-xl bg-white py-1.5 text-[12px] font-medium text-black disabled:opacity-50">
+            {nodeData.status === "running" ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
             {nodeData.status === "running" ? tr("node.running") : "Chạy Thử Đồ"}
           </button>
-        )}
-      </div>
-
-      <Port type="source" id="result" title="Ảnh — kéo để nối" color="!bg-rose-400" port="image" />
-    </div>
+        </div>
+      }
+    >
+      <NodePorts out="image" accept="text image" />
+    </TapFrame>
   );
 });
 
@@ -727,82 +562,27 @@ export const FashionComposeNode = memo(function FashionComposeNode({ id, data, s
   const result = nodeData.result;
 
   return (
-    <div
-      className={clsx(NODE_SHELL, "w-[320px]", selected ? CARD_ON : CARD_OFF)}
-    >
-      {selected && <NodeActions id={id} />}
-      <Port type="target" id="video" title="Video hoặc ảnh" color="!bg-amber-400" accept="video image" className="!top-[26%]" />
-      <Port type="target" id="model" title="Người mẫu (ảnh)" color="!bg-rose-400" accept="image" className="!top-[50%]" />
-      <Port type="target" id="garment" title="Trang phục (ảnh)" color="!bg-amber-300" accept="image" className="!top-[74%]" />
-
-      <NodeHeader
-        icon={SplitSquareVertical}
-        title="Ghép Lookbook (9:16)"
-        data={nodeData}
-        accent="bg-amber-900/40 text-amber-300"
-      />
-
-      <div className="space-y-2.5 p-3">
-        <div className="flex items-center justify-between text-[11px] text-ink-400">
-          <span>Bố cục TikTok Split (60:40)</span>
-          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">1080x1920</span>
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-ink-300">Tiêu đề chính (Banner):</label>
-          <input
-            type="text"
-            className="field nodrag text-[12px] font-bold tracking-wide"
-            placeholder="VD: HÃY NHỚ"
-            value={nodeData.headline ?? "HÃY NHỚ"}
-            onChange={(e) => update({ headline: e.target.value })}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-ink-300">Tiêu đề phụ:</label>
-          <input
-            type="text"
-            className="field nodrag text-[12px] text-amber-300"
-            placeholder="VD: Bí quyết phối đồ"
-            value={nodeData.subheadline ?? "Bí quyết phối đồ"}
-            onChange={(e) => update({ subheadline: e.target.value })}
-          />
-        </div>
-
-        <p className="flex items-center gap-1.5 text-[10.5px] text-ink-500">
-          <Layers size={11} className="text-amber-500" />
-          3 cổng: Video (trái) · Người mẫu + Trang phục (phải)
-        </p>
-
-        {result?.url && (
-          <div className="group/card relative overflow-hidden rounded-lg border border-white/10">
-            <video src={withBasePath(result.url)} controls className="aspect-[9/16] w-full object-cover" />
-            <button
-              onClick={() => run(id)}
-              disabled={nodeData.status === "running"}
-              title="Tạo lại"
-              className="nodrag absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-ink-950/70 text-white opacity-70 backdrop-blur transition hover:bg-ink-950/90 hover:opacity-100"
-            >
-              {nodeData.status === "running" ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-            </button>
-          </div>
-        )}
-
-        {!result?.url && (
-          <button
-            onClick={() => run(id)}
-            disabled={nodeData.status === "running"}
-            className="nodrag flex w-full items-center justify-center gap-2 rounded-lg bg-brass-500 py-2 text-[12.5px] font-medium text-ink-950 hover:bg-brass-400 disabled:opacity-50"
-          >
-            {nodeData.status === "running" ? <Loader2 size={12.5} className="animate-spin" /> : <Play size={12.5} />}
-            {nodeData.status === "running" ? tr("node.running") : "Xuất Video Lookbook 9:16"}
+    <TapFrame
+      id={id}
+      selected={selected}
+      label="Video"
+      icon={Play}
+      data={nodeData}
+      video={result?.url}
+      editor={
+        <div className="space-y-2">
+          <p className="text-[11px] text-white/45">Lookbook 9:16 · ảnh 1 người mẫu, ảnh 2 trang phục, video hoặc ảnh thử đồ.</p>
+          <input className="field nodrag text-[12px] font-semibold" placeholder="Tiêu đề" value={nodeData.headline ?? "HÃY NHỚ"} onChange={(event) => update({ headline: event.target.value })} />
+          <input className="field nodrag text-[12px]" placeholder="Tiêu đề phụ" value={nodeData.subheadline ?? "Bí quyết phối đồ"} onChange={(event) => update({ subheadline: event.target.value })} />
+          <button onClick={() => run(id)} disabled={nodeData.status === "running"} className="nodrag flex w-full items-center justify-center gap-1.5 rounded-xl bg-white py-1.5 text-[12px] font-medium text-black disabled:opacity-50">
+            {nodeData.status === "running" ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+            {nodeData.status === "running" ? tr("node.running") : "Xuất video"}
           </button>
-        )}
-      </div>
-
-      <Port type="source" id="result" title="Video — kéo để nối" color="!bg-amber-400" port="video" />
-    </div>
+        </div>
+      }
+    >
+      <NodePorts out="video" accept="image video" />
+    </TapFrame>
   );
 });
 
@@ -844,14 +624,17 @@ interface ImageTag {
   preview?: string;
 }
 
-/**
- * Images connected to this node's "image" handle, in connection order — used
- * to power the "@" mention list in prompt textareas (@Ảnh1, @Ảnh2, ...).
- */
+/** Image-producing sources wired into this node, in connection order (@Ảnh1, @Ảnh2, …). */
 function useConnectedImageTags(nodeId: string): ImageTag[] {
   const { getEdges, getNodes } = useReactFlow();
-  const edges = getEdges().filter((edge) => edge.target === nodeId && edge.targetHandle === "image");
   const nodes = getNodes();
+  const edges = getEdges().filter((edge) => {
+    if (edge.target !== nodeId) return false;
+    const source = nodes.find((node) => node.id === edge.source);
+    if (!source) return false;
+    const role = sourceMediaRole(source.type, source.data as StudioNodeData);
+    return role === "image" || role === "look";
+  });
   return edges.map((edge, index) => {
     const source = nodes.find((node) => node.id === edge.source);
     const sourceData = (source?.data ?? {}) as StudioNodeData;
@@ -860,14 +643,10 @@ function useConnectedImageTags(nodeId: string): ImageTag[] {
   });
 }
 
-/** The image feeding a single target handle on this node, if any (for small reference icons). */
-function useConnectedPreview(nodeId: string, handle: string): string | undefined {
-  const { getEdges, getNodes } = useReactFlow();
-  const edge = getEdges().find((e) => e.target === nodeId && e.targetHandle === handle);
-  if (!edge) return undefined;
-  const source = getNodes().find((n) => n.id === edge.source);
-  const sourceData = (source?.data ?? {}) as StudioNodeData;
-  return sourceData.imageUrl || sourceData.result?.url;
+/** The nth image-producing source on this node (0 = model, 1 = garment). */
+function useConnectedPreview(nodeId: string, index: number): string | undefined {
+  const tags = useConnectedImageTags(nodeId);
+  return tags[index]?.preview;
 }
 
 /** A prompt textarea that opens a picker of connected images when "@" is typed. */
@@ -974,17 +753,14 @@ export const GroupNode = memo(function GroupNode({ id, data, selected }: NodePro
 
   return (
     <div
-      className={clsx(
-        "relative rounded-2xl bg-[#161618]/90 transition-shadow duration-150",
-        selected && "ring-1 ring-brass-400/70",
-      )}
+      className={clsx("relative rounded-[28px] bg-[#2a2a2a]/75", selected && "outline outline-1 outline-white/40")}
       style={{ width: groupData.width ?? 320, height: groupData.height ?? 220 }}
     >
       <input
-        value={groupData.label ?? "New Group"}
+        value={groupData.label ?? "Nhóm mới"}
         onChange={(event) => setLabel(event.target.value)}
-        className="nodrag absolute -top-6 left-0 bg-transparent text-[12px] text-ink-400 outline-none placeholder:text-ink-500"
-        placeholder="New Group"
+        className="nodrag absolute -top-6 left-1 bg-transparent text-[13px] text-white/90 outline-none"
+        placeholder="Nhóm mới"
       />
     </div>
   );

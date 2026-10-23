@@ -32,20 +32,7 @@ export function Inspector({
   const { tr, toast } = useUi();
   const models = useStudio((s) => s.models);
 
-  if (!node) {
-    return (
-      <aside className="hidden w-[288px] shrink-0 flex-col border-l border-ink-700/60 bg-ink-900/40 xl:flex">
-        <div className="border-b border-ink-700/60 px-4 py-3.5">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-400">
-            {tr("canvas.inspector")}
-          </h2>
-        </div>
-        <div className="flex flex-1 items-center justify-center px-6">
-          <p className="text-center text-[12.5px] leading-relaxed text-ink-500">{tr("canvas.inspectorEmpty")}</p>
-        </div>
-      </aside>
-    );
-  }
+  if (!node) return null;
 
   const data = node.data ?? {};
   const kind = node.type === "upscale" ? "upscale" : node.type === "train" ? "train" : (data.modelKind ?? "image");
@@ -54,7 +41,7 @@ export function Inspector({
   const modelId = data.modelId;
 
   return (
-    <aside className="flex w-[288px] shrink-0 flex-col border-l border-ink-700/60 bg-ink-900/50">
+    <aside className="absolute right-3 top-3 z-30 flex max-h-[min(680px,calc(100%-1.5rem))] w-[288px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#141414]/95 shadow-[0_18px_50px_rgba(0,0,0,.65)]">
       <div className="flex items-center justify-between border-b border-ink-700/60 px-4 py-3">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-400">
           {tr("canvas.inspector")}

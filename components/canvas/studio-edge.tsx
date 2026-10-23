@@ -42,9 +42,9 @@ export function StudioEdge({
         markerEnd={markerEnd}
         interactionWidth={28}
         style={{
-          stroke: "#9a9aa8",
-          strokeWidth: selected ? 3 : 2.25,
           ...style,
+          stroke: selected ? "#ffffff" : "#d4d4d4",
+          strokeWidth: selected ? 2 : 1.5,
         }}
       />
       {selected && (
@@ -89,6 +89,6 @@ export function StudioConnectionLine({
   });
   const bad = connectionStatus === "invalid";
   return (
-    <path d={path} fill="none" stroke={bad ? "#f87171" : "#e8c98d"} strokeWidth={2.5} strokeLinecap="round" />
+    <path d={path} fill="none" stroke={bad ? "#f87171" : "#e6e6e6"} strokeWidth={1.6} strokeLinecap="round" />
   );
 }

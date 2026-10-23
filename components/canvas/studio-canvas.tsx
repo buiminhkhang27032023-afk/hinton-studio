@@ -5,8 +5,6 @@ import { withBasePath } from "@/lib/base-path";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   addEdge,
-  Background,
-  BackgroundVariant,
   ConnectionLineType,
   MiniMap,
   Panel,
@@ -22,7 +20,6 @@ import {
   type Connection,
   type Edge,
   type FinalConnectionState,
-  type Node,
   type OnConnectStartParams,
   type OnSelectionChangeParams,
 } from "@xyflow/react";
@@ -56,11 +53,11 @@ import { Inspector } from "./inspector";
 import { NodeMenuContext, RunNodeContext } from "./run-context";
 import { StudioConnectionLine, StudioEdge } from "./studio-edge";
 import {
-  PORT_STROKE,
+  HANDLE_IN,
+  HANDLE_OUT,
   accepts,
   kindsCompatible,
   outputKind,
-  sourceHandleFor,
   targetHandleFor,
   type PortKind,
 } from "./ports";
@@ -68,7 +65,7 @@ import {
 // Stable references — inline objects here make React Flow re-subscribe every render.
 const FIT_VIEW_OPTIONS = { padding: 0.3 } as const;
 const PRO_OPTIONS = { hideAttribution: true } as const;
-const DEFAULT_EDGE_OPTIONS = { type: "studio", animated: false, style: { strokeWidth: 2.25 } } as const;
+const DEFAULT_EDGE_OPTIONS = { type: "studio", animated: false, style: { stroke: "#d4d4d4", strokeWidth: 1.5 } } as const;
 const EDGE_TYPES = { studio: StudioEdge };
 
 type AddMenuState = {
@@ -84,20 +81,29 @@ type AddMenuState = {
 
 type LinkDrag = { from: "source"; out: PortKind } | { from: "target"; accepts: string };
 
-function decorateEdge(edge: Edge, list: { id: string; type?: string | null; data?: { modelKind?: string } }[]): Edge {
-  const source = list.find((node) => node.id === edge.source);
-  const kind = outputKind(source?.type, source?.data) ?? "any";
+const LEGACY_HANDLES = new Set(["model", "model_image", "garment", "garment_image", "video", "prompt", "image", "images"]);
+
+/** Every wire uses the single in/out handles. Old port names are kept only as a role hint. */
+function decorateEdge(edge: Edge, _list?: unknown): Edge {
+  const data = { ...(edge.data as Record<string, unknown> | undefined) };
+  const prev = typeof edge.targetHandle === "string" ? edge.targetHandle : "";
+  const stored = typeof data.legacyHandle === "string" ? data.legacyHandle : "";
+  const legacy = LEGACY_HANDLES.has(stored) ? stored : LEGACY_HANDLES.has(prev) ? prev : "";
+  if (legacy) data.legacyHandle = legacy;
+  else delete data.legacyHandle;
   return {
     ...edge,
     type: "studio",
     animated: false,
-    style: { stroke: PORT_STROKE[kind], strokeWidth: 2.25 },
+    sourceHandle: HANDLE_OUT,
+    targetHandle: HANDLE_IN,
+    data,
+    style: { stroke: "#d4d4d4", strokeWidth: 1.5 },
   };
 }
 
-function minimapColor(node: Node): string {
-  const kind = outputKind(node.type, node.data as { modelKind?: string });
-  return kind ? PORT_STROKE[kind] : "#3a3a44";
+function minimapColor(): string {
+  return "#a3a3a3";
 }
 
 const NODE_LIBRARY = [
@@ -182,8 +188,9 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        sourceHandle: edge.sourceHandle,
-        targetHandle: edge.targetHandle,
+        sourceHandle: HANDLE_OUT,
+        targetHandle: HANDLE_IN,
+        data: edge.data,
       })),
       viewport: getViewport(),
     };
@@ -261,21 +268,22 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     const source = list.find((node) => node.id === connection.source);
     const target = list.find((node) => node.id === connection.target);
     if (!source || !target) return false;
-    return kindsCompatible(outputKind(source.type, source.data), accepts(target.type, connection.targetHandle));
+    return kindsCompatible(outputKind(source.type, source.data), accepts(target.type, target.data));
   }, []);
 
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!isValidConnection(connection)) return;
-      const source = nodesRef.current.find((node) => node.id === connection.source);
-      const kind = outputKind(source?.type, source?.data) ?? "any";
       setEdges((current) =>
         addEdge(
           {
             ...connection,
+            sourceHandle: HANDLE_OUT,
+            targetHandle: HANDLE_IN,
             type: "studio",
             animated: false,
-            style: { stroke: PORT_STROKE[kind], strokeWidth: 2.25 },
+            data: {},
+            style: { stroke: "#d4d4d4", strokeWidth: 1.5 },
           },
           current,
         ),
@@ -287,15 +295,18 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   const onReconnect = useCallback(
     (oldEdge: Edge, connection: Connection) => {
       if (!isValidConnection(connection)) return;
-      const source = nodesRef.current.find((node) => node.id === connection.source);
-      const kind = outputKind(source?.type, source?.data) ?? "any";
       setEdges((current) =>
         reconnectEdge(oldEdge, connection, current).map((edge) =>
-          edge.source === connection.source &&
-          edge.target === connection.target &&
-          edge.sourceHandle === connection.sourceHandle &&
-          edge.targetHandle === connection.targetHandle
-            ? { ...edge, type: "studio", animated: false, style: { stroke: PORT_STROKE[kind], strokeWidth: 2.25 } }
+          edge.source === connection.source && edge.target === connection.target
+            ? {
+                ...edge,
+                type: "studio",
+                animated: false,
+                sourceHandle: HANDLE_OUT,
+                targetHandle: HANDLE_IN,
+                data: {},
+                style: { stroke: "#d4d4d4", strokeWidth: 1.5 },
+              }
             : edge,
         ),
       );
@@ -314,7 +325,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   const onConnectStart = useCallback((_event: MouseEvent | TouchEvent, params: OnConnectStartParams) => {
     const node = nodesRef.current.find((item) => item.id === params.nodeId);
     if (params.handleType === "target") {
-      setLinkDrag({ from: "target", accepts: accepts(node?.type, params.handleId).join(" ") });
+      setLinkDrag({ from: "target", accepts: accepts(node?.type, node?.data).join(" ") });
       return;
     }
     setLinkDrag({ from: "source", out: outputKind(node?.type, node?.data) ?? "any" });
@@ -396,7 +407,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       type: "group",
       position: anchor,
       zIndex: -1,
-      data: { label: "New Group", width: groupWidth, height: groupHeight } as unknown as StudioNodeData,
+      data: { label: "Nhóm mới", width: groupWidth, height: groupHeight } as unknown as StudioNodeData,
     };
 
     setNodes((current) => [
@@ -696,17 +707,16 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       if (connect?.handleType === "source") {
         const source = nodesRef.current.find((node) => node.id === connect.nodeId);
         const kind = outputKind(source?.type, source?.data) ?? "any";
-        const targetHandle = targetHandleFor(item.type, extra, kind);
-        if (targetHandle) {
+        if (targetHandleFor(item.type, extra, kind)) {
           setEdges((current) =>
             addEdge(
               {
                 source: connect.nodeId,
-                sourceHandle: connect.handleId,
+                sourceHandle: HANDLE_OUT,
                 target: id,
-                targetHandle,
+                targetHandle: HANDLE_IN,
                 type: "studio",
-                style: { stroke: PORT_STROKE[kind], strokeWidth: 2.25 },
+                style: { stroke: "#d4d4d4", strokeWidth: 1.5 },
               },
               current,
             ),
@@ -714,17 +724,17 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         }
       } else if (connect?.handleType === "target") {
         const kind = outputKind(item.type, extra);
-        const sourceHandle = sourceHandleFor(item.type);
-        if (kind && sourceHandle) {
+        const target = nodesRef.current.find((node) => node.id === connect.nodeId);
+        if (kind && kindsCompatible(kind, accepts(target?.type, target?.data))) {
           setEdges((current) =>
             addEdge(
               {
                 source: id,
-                sourceHandle,
+                sourceHandle: HANDLE_OUT,
                 target: connect.nodeId,
-                targetHandle: connect.handleId,
+                targetHandle: HANDLE_IN,
                 type: "studio",
-                style: { stroke: PORT_STROKE[kind], strokeWidth: 2.25 },
+                style: { stroke: "#d4d4d4", strokeWidth: 1.5 },
               },
               current,
             ),
@@ -744,7 +754,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       const kind = outputKind(node?.type, node?.data) ?? "any";
       return NODE_LIBRARY.filter((item) => targetHandleFor(item.type, itemData(item), kind));
     }
-    const accepted = accepts(node?.type, connect.handleId);
+    const accepted = accepts(node?.type, node?.data);
     return NODE_LIBRARY.filter((item) => kindsCompatible(outputKind(item.type, itemData(item)), accepted));
   }, [addMenu, nodes]);
 
@@ -757,17 +767,16 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   const hasKey = useStudio((s) => s.hasKey);
 
   return (
-    <div className="flex h-full min-h-0 bg-[#0c0c0f]">
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        <header className="flex h-10 shrink-0 items-center gap-2 border-b border-white/[0.06] px-3">
-          <h1 className="truncate font-display text-[14px] tracking-tight">{project.name}</h1>
-          <span className="text-[10px] text-ink-500">
+    <div className="relative h-full min-h-0 bg-black">
+        <header className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-2">
+          <h1 className="pointer-events-auto truncate text-[13px] text-white/80">{project.name}</h1>
+          <span className="text-[10px] text-white/40">
             {saveState === "saving" ? tr("common.saving") : saveState === "saved" ? tr("common.saved") : ""}
           </span>
         </header>
 
         {!hasKey && (
-          <div className="flex items-center justify-between gap-3 border-b border-amber-900/40 bg-amber-950/25 px-4 py-2 text-[12px] text-amber-200">
+          <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-3 rounded-full border border-amber-900/50 bg-amber-950/80 px-3 py-1.5 text-[12px] text-amber-200">
             <span className="flex items-center gap-2">
               <Layers size={13} />
               {tr("toast.noKey")}
@@ -780,7 +789,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
 
         <div
           ref={wrapper}
-          className={clsx("relative min-h-0 flex-1", linkDrag && "rf-connecting")}
+          className={clsx("absolute inset-0", linkDrag && "rf-connecting")}
           data-from={linkDrag?.from}
           data-out={linkDrag?.from === "source" ? linkDrag.out : undefined}
           data-accepts={linkDrag?.from === "target" ? linkDrag.accepts : undefined}
@@ -850,9 +859,8 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             selectionOnDrag={false}
             selectionKeyCode="Shift"
             selectionMode={SelectionMode.Partial}
-            className="bg-[#0c0c0f]"
+            className="bg-black"
           >
-            <Background variant={BackgroundVariant.Dots} gap={20} size={1.35} color="#3a3a44" />
             <ConnectHint />
             <ZoomBar />
             <MiniMap
@@ -1045,11 +1053,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                 <h3 className="mt-3 font-display text-[20px]">{tr("canvas.emptyTitle")}</h3>
                 <p className="mt-1 text-[12.5px] leading-relaxed text-ink-400">{tr("canvas.emptyBody")}</p>
                 <p className="mt-2 text-[12px] text-ink-500">{tr("canvas.emptyHint")}</p>
-                <div className="mt-3 flex items-center justify-center gap-3 text-[11px]">
-                  <span className="text-violet-300">● {tr("canvas.legend.text")}</span>
-                  <span className="text-sky-300">● {tr("canvas.legend.image")}</span>
-                  <span className="text-amber-300">● {tr("canvas.legend.video")}</span>
-                </div>
+                <p className="mt-3 text-[11px] text-white/40">Một điểm vào · một điểm ra</p>
               </div>
             </div>
           )}
@@ -1063,7 +1067,6 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             </div>
           )}
         </div>
-      </div>
 
       <Inspector
         node={selectedNode}

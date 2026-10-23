@@ -114,14 +114,14 @@ select.field {
 
 /* React Flow theme overrides */
 .react-flow {
-  --xy-background-color: #0c0c0f;
-  --xy-edge-stroke: #6c6c7a;
-  --xy-edge-stroke-selected: #f3f3f5;
-  --xy-connectionline-stroke: #e8c98d;
-  --xy-handle-background-color: var(--color-ink-400);
-  --xy-handle-border-color: #0b0b0e;
-  --xy-minimap-background-color: #101014;
-  --xy-minimap-mask-background-color: rgba(8, 8, 10, 0.62);
+  --xy-background-color: #000;
+  --xy-edge-stroke: #d4d4d4;
+  --xy-edge-stroke-selected: #ffffff;
+  --xy-connectionline-stroke: #e6e6e6;
+  --xy-handle-background-color: #fff;
+  --xy-handle-border-color: #000;
+  --xy-minimap-background-color: #0a0a0a;
+  --xy-minimap-mask-background-color: rgba(0, 0, 0, 0.55);
   --xy-selection-background-color: rgba(255, 255, 255, 0.04);
   --xy-selection-border: 1px dashed rgba(255, 255, 255, 0.45);
 }
@@ -129,24 +129,34 @@ select.field {
   display: none;
 }
 .react-flow__handle {
-  width: 16px;
-  height: 16px;
-  border-width: 2.5px;
-  border-color: #0b0b0e;
+  width: 14px;
+  height: 14px;
+  opacity: 0;
+  background: #fff;
+  border: 2px solid #000;
+  transform: translate(-50%, -50%);
   transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+.react-flow__node:hover .react-flow__handle,
+.react-flow__node.selected .react-flow__handle,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  opacity: 1;
 }
 .react-flow__handle:hover,
 .react-flow__handle.connectingfrom {
-  transform: scale(1.4);
+  transform: translate(-50%, -50%) scale(1.35);
   box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.18);
 }
 .react-flow__handle.valid,
 .react-flow__handle.connectingto.valid {
-  transform: scale(1.5);
-  box-shadow: 0 0 0 7px rgba(110, 231, 183, 0.45);
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.45);
+  box-shadow: 0 0 0 7px rgba(255, 255, 255, 0.28);
 }
 .react-flow__handle.connectingto:not(.valid) {
-  transform: scale(1.45);
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.35);
   box-shadow: 0 0 0 7px rgba(248, 113, 113, 0.45);
 }
 /* While dragging a wire, dim ports that cannot accept it and pop the ones that can. */
@@ -158,8 +168,8 @@ select.field {
 .rf-connecting[data-from="source"][data-out="video"] .react-flow__handle.target[data-accept~="video"],
 .rf-connecting[data-from="source"][data-out="any"] .react-flow__handle.target[data-accept] {
   opacity: 1;
-  transform: scale(1.45);
-  box-shadow: 0 0 0 6px rgba(232, 201, 141, 0.42);
+  transform: translate(-50%, -50%) scale(1.45);
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.35);
 }
 .rf-connecting[data-from="target"] .react-flow__handle.source {
   opacity: 0.22;
@@ -170,8 +180,8 @@ select.field {
 .rf-connecting[data-from="target"][data-accepts~="any"] .react-flow__handle.source,
 .rf-connecting[data-from="target"] .react-flow__handle.source[data-port="any"] {
   opacity: 1;
-  transform: scale(1.45);
-  box-shadow: 0 0 0 6px rgba(232, 201, 141, 0.42);
+  transform: translate(-50%, -50%) scale(1.45);
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.35);
 }
 .react-flow__edge-path {
   stroke-linecap: round;
@@ -205,10 +215,12 @@ select.field {
   box-shadow: none;
 }
 .react-flow__edge-path {
-  stroke-width: 2.25;
+  stroke: #d4d4d4;
+  stroke-width: 1.5;
 }
 .react-flow__edge.selected .react-flow__edge-path {
-  stroke: #f4f4f5;
+  stroke: #ffffff;
+  stroke-width: 2;
 }
 
 /* Motion */
