@@ -3,7 +3,7 @@
 import { withBasePath } from "@/lib/base-path";
 
 import { memo, useCallback, useRef, useState } from "react";
-import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react";
+import { Handle, NodeToolbar, Position, useReactFlow, type NodeProps } from "@xyflow/react";
 import clsx from "clsx";
 import {
   AlertCircle,
@@ -24,12 +24,81 @@ import {
   Download,
 } from "lucide-react";
 import { useStudio, useModelsOfKind, useModelById } from "@/lib/studio-store";
-import { useRunNode } from "./run-context";
+import { useNodeMenu, useRunNode } from "./run-context";
+import type { PortKind } from "./ports";
 import { useUi } from "@/lib/ui-store";
 import type { StudioNodeData } from "@/lib/execute";
 
 const NODE_SHELL =
-  "group relative rounded-xl2 border bg-white shadow-[0_10px_28px_-10px_rgba(0,0,0,.6)] transition-[border-color,box-shadow,transform] duration-150 ease-out hover:shadow-[0_16px_36px_-10px_rgba(0,0,0,.7)]";
+  "group/node relative rounded-2xl border bg-[#141418] text-ink-100 shadow-[0_18px_48px_-24px_rgba(0,0,0,.9)]";
+
+const CARD_ON = "border-white/80 ring-1 ring-white/30";
+const CARD_OFF = "border-white/10 hover:border-white/25";
+
+function NodeActions({ id, canRun = true }: { id: string; canRun?: boolean }) {
+  const { tr } = useUi();
+  const run = useRunNode();
+  const menu = useNodeMenu();
+  return (
+    <NodeToolbar isVisible position={Position.Top} offset={10} align="center">
+      <div className="nodrag nopan flex items-center gap-0.5 rounded-full border border-white/10 bg-[#1a1a20]/95 p-1 shadow-xl backdrop-blur">
+        {canRun && (
+          <button
+            type="button"
+            onClick={() => run(id)}
+            className="rounded-full px-2.5 py-1 text-[12px] font-medium text-brass-300 hover:bg-white/10"
+          >
+            {tr("canvas.toolbar.run")}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => menu.duplicate(id)}
+          className="rounded-full px-2.5 py-1 text-[12px] text-ink-200 hover:bg-white/10"
+        >
+          {tr("canvas.duplicate")}
+        </button>
+        <button
+          type="button"
+          onClick={() => menu.remove(id)}
+          className="rounded-full px-2.5 py-1 text-[12px] text-red-300 hover:bg-white/10"
+        >
+          {tr("common.delete")}
+        </button>
+      </div>
+    </NodeToolbar>
+  );
+}
+
+function Port({
+  type,
+  id,
+  title,
+  color,
+  port,
+  accept,
+  className,
+}: {
+  type: "source" | "target";
+  id: string;
+  title: string;
+  color: string;
+  port?: PortKind;
+  accept?: string;
+  className?: string;
+}) {
+  return (
+    <Handle
+      type={type}
+      position={type === "source" ? Position.Right : Position.Left}
+      id={id}
+      title={title}
+      data-port={port}
+      data-accept={accept}
+      className={clsx("!border-[2.5px] !border-[#0b0b0e]", color, className)}
+    />
+  );
+}
 
 function StatusPill({ data }: { data: StudioNodeData }) {
   const { tr } = useUi();
@@ -60,12 +129,12 @@ function NodeHeader({
   accent: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-ink-200 px-3.5 py-2.5">
+    <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
       <div className="flex items-center gap-2">
         <span className={clsx("grid h-6 w-6 place-items-center rounded-md", accent)}>
           <Icon size={12.5} strokeWidth={2.2} />
         </span>
-        <span className="text-[12.5px] font-medium tracking-tight text-ink-900">{title}</span>
+        <span className="text-[12.5px] font-medium tracking-tight text-ink-100">{title}</span>
       </div>
       <StatusPill data={data} />
     </div>
@@ -82,9 +151,10 @@ export const PromptNode = memo(function PromptNode({ id, data, selected }: NodeP
       className={clsx(
         NODE_SHELL,
         "w-[300px]",
-        selected ? "border-brass-500/70" : "border-ink-200",
+        selected ? CARD_ON : CARD_OFF,
       )}
     >
+      {selected && <NodeActions id={id} canRun={false} />}
       <NodeHeader
         icon={Type}
         title={tr("node.prompt")}
@@ -103,12 +173,7 @@ export const PromptNode = memo(function PromptNode({ id, data, selected }: NodeP
           <span>{tr("canvas.connectionHint")}</span>
         </div>
       </div>
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="prompt"
-        className="!bg-violet-400"
-      />
+      <Port type="source" id="prompt" title="Chữ — kéo để nối" color="!bg-violet-400" port="text" />
     </div>
   );
 });
@@ -144,7 +209,7 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
 
   return (
     <div
-      className={clsx(NODE_SHELL, "w-[260px]", selected ? "border-brass-500/70" : "border-ink-200")}
+      className={clsx(NODE_SHELL, "w-[260px]", selected ? CARD_ON : CARD_OFF)}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
@@ -152,18 +217,19 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
         if (file) upload(file);
       }}
     >
+      {selected && <NodeActions id={id} canRun={false} />}
       <NodeHeader
         icon={ImageIcon}
         title={tr("node.image")}
         data={nodeData}
-        accent="bg-sky-100 text-sky-600"
+        accent="bg-sky-500/15 text-sky-300"
       />
       <div className="p-3">
         <button
           onClick={() => inputRef.current?.click()}
           className={clsx(
             "relative grid w-full overflow-hidden rounded-lg border border-dashed transition",
-            preview ? "border-transparent" : "border-ink-300 hover:border-brass-500/60 hover:bg-ink-100",
+            preview ? "border-transparent" : "border-white/15 hover:border-brass-500/60 hover:bg-white/[0.03]",
           )}
           style={{ aspectRatio: "4/3" }}
         >
@@ -188,7 +254,7 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
           }}
         />
       </div>
-      <Handle type="source" position={Position.Right} id="image" className="!bg-sky-400" />
+      <Port type="source" id="image" title="Ảnh — kéo để nối" color="!bg-sky-400" port="image" />
     </div>
   );
 });
@@ -237,15 +303,16 @@ export const GenerateNode = memo(function GenerateNode({ id, data, selected }: N
 
   return (
     <div
-      className={clsx(NODE_SHELL, "w-[300px]", selected ? "border-brass-500/70" : "border-ink-200")}
+      className={clsx(NODE_SHELL, "w-[300px]", selected ? CARD_ON : CARD_OFF)}
     >
-      <Handle type="target" position={Position.Left} id="prompt" className="!top-[38%] !bg-violet-400" />
-      <Handle type="target" position={Position.Left} id="image" className="!top-[62%] !bg-sky-400" />
+      {selected && <NodeActions id={id} />}
+      <Port type="target" id="prompt" title="Nhận chữ" color="!bg-violet-400" accept="text" className="!top-[38%]" />
+      <Port type="target" id="image" title="Nhận ảnh" color="!bg-sky-400" accept="image" className="!top-[62%]" />
       <NodeHeader
         icon={nodeData.modelKind === "video" ? Play : Wand2}
         title={nodeData.modelKind === "video" ? "Tạo video" : "Tạo ảnh"}
         data={nodeData}
-        accent="bg-brass-300/60 text-brass-700"
+        accent="bg-brass-500/20 text-brass-300"
       />
 
       <div className="space-y-2.5 p-3">
@@ -345,13 +412,19 @@ export const GenerateNode = memo(function GenerateNode({ id, data, selected }: N
         )}
 
         {!nodeData.modelId && models.length > 0 && (
-          <p className="rounded-md border border-amber-300/60 bg-amber-50 px-2 py-1 text-[10.5px] text-amber-700">
+          <p className="rounded-md border border-amber-400/30 bg-amber-950/40 px-2 py-1 text-[10.5px] text-amber-200">
             Chọn model ở hàng phía trên để bắt đầu.
           </p>
         )}
       </div>
 
-      <Handle type="source" position={Position.Right} id="result" className="!bg-brass-400" />
+      <Port
+        type="source"
+        id="result"
+        title={nodeData.modelKind === "video" ? "Video — kéo để nối" : "Ảnh — kéo để nối"}
+        color={nodeData.modelKind === "video" ? "!bg-amber-400" : "!bg-sky-400"}
+        port={nodeData.modelKind === "video" ? "video" : "image"}
+      />
     </div>
   );
 });
@@ -367,9 +440,10 @@ export const UpscaleNode = memo(function UpscaleNode({ id, data, selected }: Nod
 
   return (
     <div
-      className={clsx(NODE_SHELL, "w-[270px]", selected ? "border-brass-500/70" : "border-ink-200")}
+      className={clsx(NODE_SHELL, "w-[270px]", selected ? CARD_ON : CARD_OFF)}
     >
-      <Handle type="target" position={Position.Left} id="image" className="!bg-sky-400" />
+      {selected && <NodeActions id={id} />}
+      <Port type="target" id="image" title="Nhận ảnh" color="!bg-sky-400" accept="image" />
       <NodeHeader
         icon={ZoomIn}
         title={tr("node.upscale")}
@@ -394,8 +468,8 @@ export const UpscaleNode = memo(function UpscaleNode({ id, data, selected }: Nod
               className={clsx(
                 "nodrag rounded-full border px-2.5 py-1 text-[11px] transition",
                 (nodeData.scale ?? 2) === scale
-                  ? "border-brass-500/70 bg-brass-300/40 text-brass-700"
-                  : "border-ink-200 text-ink-500 hover:border-ink-400",
+                  ? "border-brass-500/70 bg-brass-500/20 text-brass-200"
+                  : "border-white/15 text-ink-300 hover:border-white/30",
               )}
             >
               ×{scale}
@@ -412,7 +486,7 @@ export const UpscaleNode = memo(function UpscaleNode({ id, data, selected }: Nod
           )}
         </div>
         {nodeData.result && (
-          <div className="group/card relative overflow-hidden rounded-lg border border-ink-200">
+          <div className="group/card relative overflow-hidden rounded-lg border border-white/10">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={withBasePath(nodeData.result.url)} alt="" className="w-full" />
             <button
@@ -429,7 +503,7 @@ export const UpscaleNode = memo(function UpscaleNode({ id, data, selected }: Nod
           <p className="rounded-md bg-red-950/50 px-2 py-1.5 text-[11.5px] text-red-300">{nodeData.error}</p>
         )}
       </div>
-      <Handle type="source" position={Position.Right} id="result" className="!bg-brass-400" />
+      <Port type="source" id="result" title="Ảnh — kéo để nối" color="!bg-sky-400" port="image" />
     </div>
   );
 });
@@ -445,9 +519,10 @@ export const TrainNode = memo(function TrainNode({ id, data, selected }: NodePro
 
   return (
     <div
-      className={clsx(NODE_SHELL, "w-[280px]", selected ? "border-brass-500/70" : "border-ink-200")}
+      className={clsx(NODE_SHELL, "w-[280px]", selected ? CARD_ON : CARD_OFF)}
     >
-      <Handle type="target" position={Position.Left} id="images" className="!bg-sky-400" />
+      {selected && <NodeActions id={id} />}
+      <Port type="target" id="images" title="Nhận ảnh mẫu" color="!bg-sky-400" accept="image" />
       <NodeHeader
         icon={BrainCircuit}
         title={tr("node.train")}
@@ -471,11 +546,11 @@ export const TrainNode = memo(function TrainNode({ id, data, selected }: NodePro
               ...models.map((item) => ({ value: item.id, label: item.label })),
             ]}
           />
-          <span className="flex items-center gap-1 rounded-full border border-ink-200 px-2.5 py-1 text-[11px] text-ink-600">
+          <span className="flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-1 text-[11px] text-ink-300">
             Steps
             <input
               type="number"
-              className="nodrag w-14 bg-transparent text-right text-ink-900 outline-none"
+              className="nodrag w-14 bg-transparent text-right text-ink-100 outline-none"
               value={nodeData.steps ?? 1000}
               onChange={(event) => update({ steps: Number(event.target.value) })}
             />
@@ -496,23 +571,24 @@ export const TrainNode = memo(function TrainNode({ id, data, selected }: NodePro
           {nodeData.status === "running" ? tr("node.running") : tr("node.run")}
         </button>
       </div>
-      <Handle type="source" position={Position.Right} id="result" className="!bg-brass-400" />
+      <Port type="source" id="result" title="Kết quả — kéo để nối" color="!bg-emerald-400" port="any" />
     </div>
   );
 });
 
 /* ------------------------------- Output node ------------------------------ */
 
-export const OutputNode = memo(function OutputNode({ data, selected }: NodeProps) {
+export const OutputNode = memo(function OutputNode({ id, data, selected }: NodeProps) {
   const { tr } = useUi();
   const nodeData = data as StudioNodeData;
   const asset = nodeData.result;
 
   return (
     <div
-      className={clsx(NODE_SHELL, "w-[300px]", selected ? "border-brass-500/70" : "border-ink-200")}
+      className={clsx(NODE_SHELL, "w-[300px]", selected ? CARD_ON : CARD_OFF)}
     >
-      <Handle type="target" position={Position.Left} id="in" className="!bg-brass-400" />
+      {selected && <NodeActions id={id} canRun={false} />}
+      <Port type="target" id="in" title="Nhận kết quả" color="!bg-emerald-400" accept="text image video any" />
       <NodeHeader
         icon={Check}
         title={tr("node.output")}
@@ -521,7 +597,7 @@ export const OutputNode = memo(function OutputNode({ data, selected }: NodeProps
       />
       <div className="p-3">
         {asset ? (
-          <div className="group/card relative overflow-hidden rounded-lg border border-ink-200">
+          <div className="group/card relative overflow-hidden rounded-lg border border-white/10">
             {asset.kind === "video" ? (
               <video src={withBasePath(asset.url)} controls className="w-full" />
             ) : asset.kind === "image" ? (
@@ -563,11 +639,12 @@ export const FashionTryOnNode = memo(function FashionTryOnNode({ id, data, selec
 
   return (
     <div
-      className={clsx(NODE_SHELL, "w-[270px]", selected ? "border-brass-500/70" : "border-ink-200")}
+      className={clsx(NODE_SHELL, "w-[270px]", selected ? CARD_ON : CARD_OFF)}
     >
-      <Handle type="target" position={Position.Left} id="model" className="!top-[28%] !bg-rose-400" />
-      <Handle type="target" position={Position.Left} id="garment" className="!top-[56%] !bg-amber-400" />
-      <Handle type="target" position={Position.Left} id="prompt" className="!top-[84%] !bg-violet-400" />
+      {selected && <NodeActions id={id} />}
+      <Port type="target" id="model" title="Người mẫu (ảnh)" color="!bg-rose-400" accept="image" className="!top-[28%]" />
+      <Port type="target" id="garment" title="Trang phục (ảnh)" color="!bg-amber-400" accept="image" className="!top-[56%]" />
+      <Port type="target" id="prompt" title="Nhận chữ" color="!bg-violet-400" accept="text" className="!top-[84%]" />
 
       <NodeHeader
         icon={Shirt}
@@ -585,9 +662,9 @@ export const FashionTryOnNode = memo(function FashionTryOnNode({ id, data, selec
         />
 
         {result?.url && (
-          <div className="group/card relative overflow-hidden rounded-xl border border-ink-200 bg-white">
-            <div className="flex items-center justify-between bg-ink-100 px-2.5 py-1.5">
-              <span className="text-[11px] font-semibold tracking-tight text-ink-900">Today&apos;s outfit</span>
+          <div className="group/card relative overflow-hidden rounded-xl border border-white/10 bg-[#101014]">
+            <div className="flex items-center justify-between bg-white/[0.04] px-2.5 py-1.5">
+              <span className="text-[11px] font-semibold tracking-tight text-ink-100">Today&apos;s outfit</span>
               {garmentPreview && (
                 <span className="flex items-center gap-1">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -627,7 +704,7 @@ export const FashionTryOnNode = memo(function FashionTryOnNode({ id, data, selec
           <button
             onClick={() => run(id)}
             disabled={nodeData.status === "running"}
-            className="btn-primary nodrag flex w-full items-center justify-center gap-2 py-2 text-[12.5px]"
+            className="nodrag flex w-full items-center justify-center gap-2 rounded-lg bg-brass-500 py-2 text-[12.5px] font-medium text-ink-950 hover:bg-brass-400 disabled:opacity-50"
           >
             {nodeData.status === "running" ? <Loader2 size={12.5} className="animate-spin" /> : <Play size={12.5} />}
             {nodeData.status === "running" ? tr("node.running") : "Chạy Thử Đồ"}
@@ -635,7 +712,7 @@ export const FashionTryOnNode = memo(function FashionTryOnNode({ id, data, selec
         )}
       </div>
 
-      <Handle type="source" position={Position.Right} id="result" className="!bg-rose-400" />
+      <Port type="source" id="result" title="Ảnh — kéo để nối" color="!bg-rose-400" port="image" />
     </div>
   );
 });
@@ -651,11 +728,12 @@ export const FashionComposeNode = memo(function FashionComposeNode({ id, data, s
 
   return (
     <div
-      className={clsx(NODE_SHELL, "w-[320px]", selected ? "border-brass-500/70" : "border-ink-200")}
+      className={clsx(NODE_SHELL, "w-[320px]", selected ? CARD_ON : CARD_OFF)}
     >
-      <Handle type="target" position={Position.Left} id="video" className="!top-[26%] !bg-sky-400" />
-      <Handle type="target" position={Position.Left} id="model" className="!top-[50%] !bg-rose-400" />
-      <Handle type="target" position={Position.Left} id="garment" className="!top-[74%] !bg-amber-400" />
+      {selected && <NodeActions id={id} />}
+      <Port type="target" id="video" title="Video hoặc ảnh" color="!bg-amber-400" accept="video image" className="!top-[26%]" />
+      <Port type="target" id="model" title="Người mẫu (ảnh)" color="!bg-rose-400" accept="image" className="!top-[50%]" />
+      <Port type="target" id="garment" title="Trang phục (ảnh)" color="!bg-amber-300" accept="image" className="!top-[74%]" />
 
       <NodeHeader
         icon={SplitSquareVertical}
@@ -671,7 +749,7 @@ export const FashionComposeNode = memo(function FashionComposeNode({ id, data, s
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-ink-600">Tiêu đề chính (Banner):</label>
+          <label className="text-[11px] font-medium text-ink-300">Tiêu đề chính (Banner):</label>
           <input
             type="text"
             className="field nodrag text-[12px] font-bold tracking-wide"
@@ -682,7 +760,7 @@ export const FashionComposeNode = memo(function FashionComposeNode({ id, data, s
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-ink-600">Tiêu đề phụ:</label>
+          <label className="text-[11px] font-medium text-ink-300">Tiêu đề phụ:</label>
           <input
             type="text"
             className="field nodrag text-[12px] text-amber-300"
@@ -698,7 +776,7 @@ export const FashionComposeNode = memo(function FashionComposeNode({ id, data, s
         </p>
 
         {result?.url && (
-          <div className="group/card relative overflow-hidden rounded-lg border border-ink-200">
+          <div className="group/card relative overflow-hidden rounded-lg border border-white/10">
             <video src={withBasePath(result.url)} controls className="aspect-[9/16] w-full object-cover" />
             <button
               onClick={() => run(id)}
@@ -715,7 +793,7 @@ export const FashionComposeNode = memo(function FashionComposeNode({ id, data, s
           <button
             onClick={() => run(id)}
             disabled={nodeData.status === "running"}
-            className="btn-primary nodrag flex w-full items-center justify-center gap-2 py-2 text-[12.5px] font-medium"
+            className="nodrag flex w-full items-center justify-center gap-2 rounded-lg bg-brass-500 py-2 text-[12.5px] font-medium text-ink-950 hover:bg-brass-400 disabled:opacity-50"
           >
             {nodeData.status === "running" ? <Loader2 size={12.5} className="animate-spin" /> : <Play size={12.5} />}
             {nodeData.status === "running" ? tr("node.running") : "Xuất Video Lookbook 9:16"}
@@ -723,7 +801,7 @@ export const FashionComposeNode = memo(function FashionComposeNode({ id, data, s
         )}
       </div>
 
-      <Handle type="source" position={Position.Right} id="result" className="!bg-amber-400" />
+      <Port type="source" id="result" title="Video — kéo để nối" color="!bg-amber-400" port="video" />
     </div>
   );
 });
