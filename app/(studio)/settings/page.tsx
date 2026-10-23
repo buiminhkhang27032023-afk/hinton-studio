@@ -20,6 +20,9 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
   const [testMessage, setTestMessage] = useState("");
 
+  const [tunnel, setTunnel] = useState<{ running: boolean; url: string; enabled: boolean } | null>(null);
+  const [tunnelBusy, setTunnelBusy] = useState(false);
+  const [tunnelMsg, setTunnelMsg] = useState("");
   const [iooaiKey, setIooaiKey] = useState("");
   const [iooaiHasKey, setIooaiHasKey] = useState(false);
   const [iooaiBusy, setIooaiBusy] = useState(false);
@@ -54,6 +57,7 @@ export default function SettingsPage() {
         setApiKey(settings.apiKey);
         setProxy(settings.proxyAssets);
         setPiapiHasKey(settings.piapi?.hasKey ?? false);
+        fetch(withBasePath("/api/tunnel")).then((r) => r.json()).then(setTunnel).catch(() => {});
         setPiapiKey(settings.piapi?.apiKey ?? "");
       })
       .catch(() => {});
@@ -189,6 +193,52 @@ export default function SettingsPage() {
               Cần 1–7 ảnh có URL HTTPS công khai, khung 16:9 hoặc 9:16.
               Ảnh tải lên localhost chưa thể gửi trực tiếp cho IOOAI.
             </p>
+            <div className="rounded-xl border border-ink-700/70 bg-ink-900/50 p-3.5">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[12.5px] font-medium text-ink-200">URL công khai cho ảnh tham chiếu</span>
+                {tunnel?.running ? (
+                  <span className="rounded-full bg-emerald-900/40 px-2 py-0.5 text-[10.5px] text-emerald-300">đang chạy</span>
+                ) : (
+                  <span className="rounded-full bg-ink-750 px-2 py-0.5 text-[10.5px] text-ink-400">tắt</span>
+                )}
+              </div>
+              <p className="mb-2.5 text-[11.5px] leading-relaxed text-ink-400">
+                IOOAI và PiAPI chỉ nhận ảnh từ URL https công khai, không đọc được ảnh trên máy bạn.
+                Bật tunnel để mở một địa chỉ công khai trỏ về máy này — ảnh trong thư viện sẽ tự dùng được.
+              </p>
+              {tunnel?.url && (
+                <p className="mb-2 break-all font-mono text-[11px] text-brass-300">{tunnel.url}</p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" disabled={tunnelBusy} onClick={async () => {
+                  setTunnelBusy(true); setTunnelMsg("");
+                  try {
+                    const res = await fetch(withBasePath("/api/tunnel"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", port: 3210 }) });
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.error);
+                    setTunnel({ running: true, url: data.url, enabled: true });
+                    setTunnelMsg(data.verified ? "Đã mở và kiểm tra thành công." : "Đã mở (chưa xác minh được, thử lại sau vài giây).");
+                  } catch (error) {
+                    setTunnelMsg(error instanceof Error ? error.message : "Lỗi");
+                  } finally { setTunnelBusy(false); }
+                }}>
+                  {tunnelBusy ? <Spinner /> : <PlugZap size={13} />} Bật tunnel
+                </Button>
+                <Button variant="outline" size="sm" disabled={tunnelBusy} onClick={async () => {
+                  await fetch(withBasePath("/api/tunnel"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
+                  setTunnel({ running: false, url: tunnel?.url ?? "", enabled: false });
+                  setTunnelMsg("Đã tắt tunnel.");
+                }}>
+                  Tắt
+                </Button>
+              </div>
+              {tunnelMsg && <p className="mt-2 text-[11.5px] text-ink-300">{tunnelMsg}</p>}
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-500">
+                Lưu ý: khi tunnel bật, thư mục ảnh/video của bạn truy cập được từ internet qua địa chỉ ngẫu nhiên này.
+                Tắt tunnel khi không dùng.
+              </p>
+            </div>
+
             <Button onClick={scanIooai} disabled={iooaiBusy}>
               {iooaiBusy ? <Spinner /> : <PlugZap size={14} />} Lưu và quét model IOOAI
             </Button>
