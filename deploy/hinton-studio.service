@@ -1,0 +1,21 @@
+[Unit]
+Description=Hinton AI Studio
+After=network.target
+
+[Service]
+Type=simple
+User=hintonstudio
+Group=hintonstudio
+WorkingDirectory=/opt/hinton-studio
+Environment=NODE_ENV=production
+Environment=NEXT_PUBLIC_BASE_PATH=/ai_studio
+EnvironmentFile=-/etc/hinton-studio.env
+ExecStart=/usr/bin/node /opt/hinton-studio/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3210
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

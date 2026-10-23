@@ -1,0 +1,11 @@
+"use client";
+
+import { createContext, useContext } from "react";
+
+/** Lets a node trigger its own run without prop-drilling through React Flow. */
+export const RunNodeContext = createContext<((nodeId: string) => Promise<void>) | null>(null);
+
+export function useRunNode() {
+  const run = useContext(RunNodeContext);
+  return run ?? (async () => {});
+}
