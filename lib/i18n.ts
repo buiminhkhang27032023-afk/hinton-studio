@@ -61,9 +61,26 @@ export const dict: Dict = {
   "canvas.toolbar.minimap": { vi: "Bản đồ", en: "Minimap" },
   "canvas.emptyTitle": { vi: "Không gian đang trống", en: "Empty canvas" },
   "canvas.emptyBody": {
-    vi: "Thêm khối từ thanh công cụ bên trái, hoặc kéo một ảnh vào đây để bắt đầu.",
-    en: "Add a block from the left toolbar, or drop an image here to begin.",
+    vi: "Nhấp đúp hoặc chuột phải để thêm khối. Kéo nền để di chuyển, cuộn chuột để thu phóng. Giữ Shift và kéo để chọn nhiều khối.",
+    en: "Double-click or right-click to add a block. Drag to pan, scroll to zoom. Hold Shift and drag to select several blocks.",
   },
+  "canvas.emptyHint": {
+    vi: "Mỗi khối có một điểm vào bên trái và một điểm ra bên phải. Mọi dây vào cùng một điểm — vai trò lấy theo loại khối nguồn.",
+    en: "Each block has one input on the left and one output on the right. Every wire meets that point — the role follows the source block.",
+  },
+  "canvas.legend.text": { vi: "Chữ", en: "Text" },
+  "canvas.legend.image": { vi: "Ảnh", en: "Image" },
+  "canvas.legend.video": { vi: "Video", en: "Video" },
+  "canvas.add": { vi: "Thêm khối", en: "Add block" },
+  "canvas.connectTo": { vi: "Nối tới khối mới", en: "Connect to a new block" },
+  "canvas.connectFrom": { vi: "Nối từ khối mới", en: "Connect from a new block" },
+  "canvas.invalidLink": {
+    vi: "Không nối được — khối này không nhận loại dữ liệu từ khối nguồn.",
+    en: "Can’t connect — this block doesn’t accept that source.",
+  },
+  "canvas.deleteEdge": { vi: "Xoá nối", en: "Delete link" },
+  "canvas.noMatch": { vi: "Không có khối phù hợp với cổng này.", en: "No block matches this port." },
+  "canvas.onlyCompatible": { vi: "Chỉ hiện khối nối được", en: "Only blocks that can connect" },
   "canvas.inspector": { vi: "Bảng điều khiển", en: "Inspector" },
   "canvas.inspectorEmpty": {
     vi: "Chọn một khối để chỉnh thông số.",

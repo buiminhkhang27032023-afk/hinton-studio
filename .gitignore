@@ -39,7 +39,8 @@ outputs/
 output_lookbooks/
 fashion_sources/
 insightface_models/
-models/
+# Only the root weights folder. app/api/models and insightface_models must stay tracked.
+/models/
 scratch_tryon/
 temp*/
 temp*.json

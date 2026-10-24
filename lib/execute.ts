@@ -1,5 +1,6 @@
 import { withBasePath } from "./base-path";
 import type { Edge, Node } from "@xyflow/react";
+import { sourceMediaRole } from "@/components/canvas/ports";
 import { api } from "./api-client";
 import type { Asset } from "./types";
 
@@ -68,60 +69,109 @@ export interface ResolvedInputs {
   videoUrl?: string;
 }
 
-/** Walk upstream edges to collect everything a node needs. */
+const LEGACY_HANDLES = new Set([
+  "model",
+  "model_image",
+  "garment",
+  "garment_image",
+  "video",
+  "prompt",
+  "image",
+  "images",
+]);
+
+/** Old graphs named the port. New graphs store that hint on the edge, if at all. */
+function legacyHandle(edge: Edge): string | null {
+  const stored = (edge.data as { legacyHandle?: string } | undefined)?.legacyHandle;
+  if (stored && LEGACY_HANDLES.has(stored)) return stored;
+  const handle = edge.targetHandle;
+  if (handle && LEGACY_HANDLES.has(handle)) return handle;
+  return null;
+}
+
+/**
+ * Walk upstream edges. Every wire hits the same input point, so the role
+ * (prompt, reference image, video, look) comes from the source node.
+ * Connection order is kept: the first photo is the model, the second the garment.
+ */
 export function resolveInputs(nodeId: string, nodes: StudioNode[], edges: Edge[]): ResolvedInputs {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const incoming = edges.filter((edge) => edge.target === nodeId);
 
   const texts: string[] = [];
   const images: string[] = [];
+  const refs: string[] = [];
+  const looks: string[] = [];
   const models: string[] = [];
-  let modelImage: string | undefined = undefined;
-  let garmentImage: string | undefined = undefined;
-  let videoUrl: string | undefined = undefined;
+  let modelImage: string | undefined;
+  let garmentImage: string | undefined;
+  let videoUrl: string | undefined;
 
   for (const edge of incoming) {
     const source = byId.get(edge.source);
     if (!source) continue;
     const data = source.data ?? {};
-    const handle = edge.targetHandle ?? "in";
-    const srcAsset = data.result;
-    const srcUrl = srcAsset?.url || (data.imageUrl as string) || (data.videoUrl as string);
+    const srcUrl = data.result?.url || (data.imageUrl as string) || (data.videoUrl as string);
+    const textValue = (data.text as string) || (data.prompt as string) || "";
+    const legacy = legacyHandle(edge);
 
-    if (handle === "model" || handle === "model_image") {
-      if (srcUrl) modelImage = srcUrl;
-    } else if (handle === "garment" || handle === "garment_image") {
-      if (srcUrl) garmentImage = srcUrl;
-    } else if (handle === "video") {
-      if (srcUrl) videoUrl = srcUrl;
-    } else if (handle === "prompt") {
-      const value = (data.text as string) || (data.prompt as string) || "";
-      if (value) texts.push(value);
-    } else if (handle === "images") {
-      if (srcUrl) images.push(srcUrl);
-    } else if (handle === "image") {
-      // Push (not unshift) so multiple images connected to this handle keep the
-      // same left-to-right order the user wired them in — @Ảnh1 is the first one.
+    if (legacy === "model" || legacy === "model_image") {
       if (srcUrl) {
+        modelImage = srcUrl;
         images.push(srcUrl);
-        if (!modelImage) modelImage = srcUrl;
+        refs.push(srcUrl);
       }
-    } else if (handle === "model") {
-      const value = (data.text as string) || (data.result?.name as string) || "";
-      if (value) models.push(value);
-    } else {
-      if (srcUrl) {
-        images.push(srcUrl);
-        if (srcAsset?.kind === "video" && !videoUrl) videoUrl = srcUrl;
-      }
-      const value = (data.text as string) || "";
-      if (value) texts.push(value);
+      continue;
     }
+    if (legacy === "garment" || legacy === "garment_image") {
+      if (srcUrl) {
+        garmentImage = srcUrl;
+        images.push(srcUrl);
+        refs.push(srcUrl);
+      }
+      continue;
+    }
+    if (legacy === "video") {
+      if (srcUrl) videoUrl = srcUrl;
+      continue;
+    }
+    if (legacy === "prompt") {
+      if (textValue) texts.push(textValue);
+      continue;
+    }
+    if (legacy === "image" || legacy === "images") {
+      if (srcUrl) {
+        images.push(srcUrl);
+        refs.push(srcUrl);
+      }
+      continue;
+    }
+
+    const role = sourceMediaRole(source.type, data);
+    if (role === "text") {
+      if (textValue) texts.push(textValue);
+      else if (data.result?.name) models.push(String(data.result.name));
+      continue;
+    }
+    if (role === "video") {
+      if (srcUrl) videoUrl = srcUrl;
+      continue;
+    }
+    if (!srcUrl) continue;
+    images.push(srcUrl);
+    if (role === "look") looks.push(srcUrl);
+    else refs.push(srcUrl);
   }
 
-  // Fallback heuristic if specific handles were not used
-  if (!modelImage && images.length > 0) modelImage = images[0];
-  if (!garmentImage && images.length > 1) garmentImage = images[1];
+  if (!modelImage) modelImage = refs[0] ?? looks[0];
+  if (!garmentImage) {
+    if (refs[1]) garmentImage = refs[1];
+    else if (refs[0]) garmentImage = looks.find((url) => url !== modelImage);
+    else garmentImage = looks[1];
+  }
+  if (!videoUrl) {
+    videoUrl = looks.find((url) => url !== modelImage && url !== garmentImage);
+  }
 
   return {
     prompt: texts.join("\n\n"),
