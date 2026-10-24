@@ -3,7 +3,7 @@
 import { withBasePath } from "@/lib/base-path";
 
 import { useEffect, useState } from "react";
-import { Check, Database, KeyRound, Languages, Link2, PlugZap, X } from "lucide-react";
+import { Check, Cpu, Database, KeyRound, Languages, Link2, PlugZap, X } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api-client";
 import { useUi } from "@/lib/ui-store";
@@ -45,6 +45,53 @@ export default function SettingsPage() {
   const [piapiKey, setPiapiKey] = useState("");
   const [piapiHasKey, setPiapiHasKey] = useState(false);
   const [piapiSaving, setPiapiSaving] = useState(false);
+
+  const [runninghubKey, setRunninghubKey] = useState("");
+  const [runninghubBaseUrl, setRunninghubBaseUrl] = useState("https://www.runninghub.ai");
+  const [runninghubHasKey, setRunninghubHasKey] = useState(false);
+  const [runninghubSaving, setRunninghubSaving] = useState(false);
+  const [runninghubBusy, setRunninghubBusy] = useState(false);
+  const [runninghubMsg, setRunninghubMsg] = useState("");
+
+  const saveRunninghub = async () => {
+    setRunninghubSaving(true);
+    setRunninghubMsg("");
+    try {
+      await api.settings.save({
+        runninghubApiKey: runninghubKey.includes("••••") ? "" : runninghubKey,
+        runninghubBaseUrl,
+      });
+      setRunninghubHasKey(Boolean(runninghubKey.trim()) || runninghubHasKey);
+      setRunninghubKey((key) => (key.includes("••••") ? key : key ? `••••${key.slice(-4)}` : ""));
+      toast(tr("settings.saved"), "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Lỗi lưu key", "error");
+    } finally {
+      setRunninghubSaving(false);
+    }
+  };
+
+  const checkRunninghub = async () => {
+    setRunninghubBusy(true);
+    setRunninghubMsg("");
+    try {
+      await api.settings.save({
+        runninghubApiKey: runninghubKey.includes("••••") ? "" : runninghubKey,
+        runninghubBaseUrl,
+      });
+      const res = await fetch(withBasePath("/api/models/runninghub"), { method: "POST" });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
+      setRunninghubHasKey(true);
+      setRunninghubKey((key) => (key.includes("••••") ? key : key ? `••••${key.slice(-4)}` : ""));
+      setRunninghubMsg(result.message || "Kết nối RunningHub thành công!");
+      toast("Đã kết nối RunningHub thành công!", "success");
+    } catch (error) {
+      setRunninghubMsg(error instanceof Error ? error.message : "Lỗi kết nối RunningHub");
+    } finally {
+      setRunninghubBusy(false);
+    }
+  };
 
   useEffect(() => {
     api.settings
@@ -292,6 +339,82 @@ export default function SettingsPage() {
                 {tr("common.save")}
               </Button>
             </div>
+          </div>
+        </section>
+
+        <section className="rounded-xl2 border border-ink-700/70 bg-ink-850/60 p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="grid h-7 w-7 place-items-center rounded-md bg-sky-500/20 text-sky-400">
+                <Cpu size={14} />
+              </span>
+              <h2 className="text-[14px] font-medium">RunningHub AI</h2>
+            </div>
+            {runninghubHasKey ? (
+              <span className="rounded-full bg-emerald-900/40 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
+                Đã kết nối
+              </span>
+            ) : (
+              <span className="rounded-full bg-ink-750 px-2.5 py-0.5 text-[11px] text-ink-400">Chưa có key</span>
+            )}
+          </div>
+
+          <div className="space-y-3.5">
+            <Field label="Base URL" hint="OpenAPI / ComfyUI / LLM">
+              <div className="relative">
+                <Link2 size={13.5} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-500" />
+                <Input
+                  value={runninghubBaseUrl}
+                  onChange={(event) => setRunninghubBaseUrl(event.target.value)}
+                  className="pl-8 font-mono text-[12px]"
+                  placeholder="https://www.runninghub.ai"
+                />
+              </div>
+            </Field>
+
+            <Field label="API key RunningHub" hint={runninghubHasKey ? "đã lưu" : "chưa có"}>
+              <div className="relative">
+                <KeyRound size={13.5} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-500" />
+                <Input
+                  type="password"
+                  value={runninghubKey}
+                  onChange={(event) => setRunninghubKey(event.target.value)}
+                  onFocus={() => runninghubKey.includes("••••") && setRunninghubKey("")}
+                  className="pl-8 font-mono text-[12px]"
+                  placeholder="runninghub api key…"
+                  autoComplete="off"
+                />
+              </div>
+            </Field>
+            <p className="text-[11.5px] leading-relaxed text-ink-400">
+              RunningHub hỗ trợ chạy OpenAPI Task (ComfyUI workflows, sinh video/ảnh, Kling, SD, Flux) và OpenAI-compatible LLM Gateway (https://llm.runninghub.ai/v1).
+            </p>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={checkRunninghub} disabled={runninghubBusy}>
+                  {runninghubBusy ? <Spinner /> : <PlugZap size={13} />} Kiểm tra tài khoản & Quét Model
+                </Button>
+                <a
+                  className="text-[12px] text-sky-400 underline hover:text-sky-300"
+                  href="https://www.runninghub.ai"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Lấy API Key trên RunningHub ↗
+                </a>
+              </div>
+              <Button variant="primary" onClick={saveRunninghub} disabled={runninghubSaving}>
+                {runninghubSaving ? <Spinner /> : <Check size={14} />}
+                {tr("common.save")}
+              </Button>
+            </div>
+
+            {runninghubMsg && (
+              <div className={clsx("rounded-lg p-2.5 text-[12px]", runninghubMsg.includes("thành công") || runninghubMsg.includes("Số dư") ? "bg-emerald-950/40 text-emerald-300 border border-emerald-800/40" : "bg-red-950/40 text-red-300 border border-red-800/40")}>
+                {runninghubMsg}
+              </div>
+            )}
           </div>
         </section>
 

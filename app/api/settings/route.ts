@@ -10,6 +10,7 @@ export async function GET() {
   const provider = getProvider();
   const iooai = getProvider("iooai");
   const piapi = getProvider("piapi");
+  const runninghub = getProvider("runninghub");
   return NextResponse.json({
     ...provider,
     // Never ship the raw key back to the browser; the UI only needs to know if one is set.
@@ -24,6 +25,11 @@ export async function GET() {
       apiKey: piapi.apiKey ? `••••${piapi.apiKey.slice(-4)}` : "",
       hasKey: Boolean(piapi.apiKey),
     },
+    runninghub: {
+      baseUrl: runninghub.baseUrl || "https://www.runninghub.ai",
+      apiKey: runninghub.apiKey ? `••••${runninghub.apiKey.slice(-4)}` : "",
+      hasKey: Boolean(runninghub.apiKey),
+    },
   });
 }
 
@@ -33,6 +39,9 @@ export async function PUT(request: Request) {
     iooaiApiKey?: string;
     piapiApiKey?: string;
     piapiClearKey?: boolean;
+    runninghubApiKey?: string;
+    runninghubBaseUrl?: string;
+    runninghubClearKey?: boolean;
   };
   const current = getSetting<Partial<ProviderSettings>>("provider", {});
 
@@ -67,6 +76,20 @@ export async function PUT(request: Request) {
 
   if (typeof body.iooaiApiKey === "string" && body.iooaiApiKey.trim() && !body.iooaiApiKey.includes("••••")) {
     setSetting("provider_iooai", { ...getSetting<Partial<ProviderSettings>>("provider_iooai", {}), apiKey: body.iooaiApiKey.trim() });
+  }
+
+  if (typeof body.runninghubApiKey === "string" || body.runninghubClearKey || typeof body.runninghubBaseUrl === "string") {
+    const currentRh = getSetting<Partial<ProviderSettings>>("provider_runninghub", {});
+    const nextRh: Partial<ProviderSettings> = { ...currentRh };
+    if (body.runninghubClearKey) {
+      nextRh.apiKey = "";
+    } else if (body.runninghubApiKey && body.runninghubApiKey.trim() && !body.runninghubApiKey.includes("••••")) {
+      nextRh.apiKey = body.runninghubApiKey.trim();
+    }
+    if (typeof body.runninghubBaseUrl === "string" && body.runninghubBaseUrl.trim()) {
+      nextRh.baseUrl = body.runninghubBaseUrl.trim().replace(/\/+$/, "");
+    }
+    setSetting("provider_runninghub", nextRh);
   }
   return NextResponse.json({ ok: true });
 }

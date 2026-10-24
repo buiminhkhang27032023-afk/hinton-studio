@@ -20,8 +20,10 @@ type NodeData = {
 export function outputKind(type?: string | null, data?: NodeData): PortKind | null {
   switch (type) {
     case "prompt":
+    case "prompt_master":
       return "text";
     case "image":
+      return data?.videoUrl || data?.result?.kind === "video" ? "video" : "image";
     case "upscale":
     case "fashion_tryon":
       return "image";
@@ -46,6 +48,7 @@ export function sourceHandleFor(type?: string | null): string | null {
 /** Kinds the node's single input will take. Empty means nothing may connect in. */
 export function accepts(type?: string | null, data?: NodeData): PortKind[] {
   if (!type || type === "prompt" || type === "image" || type === "group") return [];
+  if (type === "prompt_master") return ["text"];
   if (type === "result") return ["text", "image", "video", "any"];
   if (type === "generate") {
     return data?.modelKind === "video" ? ["text", "image", "video"] : ["text", "image"];
@@ -73,7 +76,7 @@ export function targetHandleFor(type: string, data: { modelKind?: string } | und
  * without stealing the reference slots.
  */
 export function sourceMediaRole(type?: string | null, data?: NodeData): MediaRole {
-  if (type === "prompt" || type === "train") return "text";
+  if (type === "prompt" || type === "train" || type === "prompt_master") return "text";
   if (type === "image") return "image";
   if (type === "fashion_compose") return "video";
   if (type === "generate") return data?.modelKind === "video" ? "video" : "look";

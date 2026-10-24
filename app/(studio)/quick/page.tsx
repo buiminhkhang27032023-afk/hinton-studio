@@ -787,9 +787,10 @@ function SceneCard({
   onDuplicate: () => void;
   onAnalyze?: () => void;
 }) {
-  const { tr } = useUi();
+  const { tr, toast } = useUi();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
 
   return (
     <div
@@ -862,7 +863,35 @@ function SceneCard({
             }
           }}
         />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-ink-400">Câu lệnh cảnh</span>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!scene.prompt.trim()) {
+                  toast("Hãy nhập ý tưởng cho cảnh trước!", "error");
+                  return;
+                }
+                setEnhancing(true);
+                try {
+                  const res = await api.promptMaster.enhance({ prompt: scene.prompt, kind: "video" });
+                  onPatch({ prompt: res.enhancedPrompt });
+                  toast("Đã hoàn thiện cảnh với AI Bùi Hữu Thắng!", "success");
+                } catch (e) {
+                  toast(e instanceof Error ? e.message : "Lỗi tối ưu", "error");
+                } finally {
+                  setEnhancing(false);
+                }
+              }}
+              disabled={enhancing}
+              className="flex items-center gap-1 rounded bg-amber-400/10 px-2 py-0.5 text-[10.5px] font-medium text-amber-300 hover:bg-amber-400/20 transition disabled:opacity-50"
+              title="Tối ưu prompt cảnh này qua Trợ lý Bậc Thầy (Bùi Hữu Thắng)"
+            >
+              {enhancing ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+              <span>{enhancing ? "Đang xử lý..." : "✨ Bậc Thầy"}</span>
+            </button>
+          </div>
           <Textarea
             rows={4}
             value={scene.prompt}

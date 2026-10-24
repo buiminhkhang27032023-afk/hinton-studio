@@ -44,6 +44,8 @@ export interface ModelConfig {
   jobPath?: string;
   /** Path used to poll an async job. {{job}} is replaced with the job id. */
   pollEndpoint?: string;
+  /** HTTP method for polling. Defaults to GET. */
+  pollMethod?: "POST" | "GET";
   /** Dot path that holds the job status. */
   statusPath?: string;
   /** Values of the status field that mean "done". */

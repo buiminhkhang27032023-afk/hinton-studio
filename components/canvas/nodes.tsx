@@ -8,6 +8,7 @@ import clsx from "clsx";
 import {
   AlertCircle,
   Check,
+  Columns,
   Image as ImageIcon,
   Loader2,
   Play,
@@ -18,12 +19,15 @@ import {
   RefreshCw,
   ArrowUp,
   Download,
+  Sparkles,
 } from "lucide-react";
+import { NodeMasterPromptBar } from "./master-prompt-section";
 import { useStudio, useModelsOfKind, useModelById } from "@/lib/studio-store";
 import { useNodeMenu, useRunNode } from "./run-context";
 import { sourceMediaRole, type PortKind } from "./ports";
 import { useUi } from "@/lib/ui-store";
 import type { StudioNodeData } from "@/lib/execute";
+import { getProviderMeta, resolveProvider } from "@/lib/provider-meta";
 
 function NodeActions({ id, canRun = true }: { id: string; canRun?: boolean }) {
   const { tr } = useUi();
@@ -102,7 +106,7 @@ function TapFrame({
       )}
       <div className="pointer-events-none absolute -top-[22px] left-0 flex max-w-full items-center gap-1 text-[12.5px] font-medium text-white">
         <Icon size={13} strokeWidth={1.8} />
-        <span className="truncate">{label}</span>
+        <span className="truncate">{data.name || label}</span>
         {ready && data.status !== "running" && data.status !== "error" && <Check size={12} strokeWidth={2.6} />}
         {data.status === "running" && <Loader2 size={12} className="animate-spin text-white/70" />}
         {data.status === "error" && <AlertCircle size={12} className="text-red-400" />}
@@ -169,19 +173,22 @@ export const PromptNode = memo(function PromptNode({ id, data, selected }: NodeP
     <TapFrame
       id={id}
       selected={selected}
-      label="Chữ"
+      label="Câu lệnh"
       icon={Type}
       data={nodeData}
       text={nodeData.text ?? ""}
       canRun={false}
-      width={200}
+      width={240}
       editor={
-        <textarea
-          className="field nodrag min-h-[96px] text-[13px]"
-          placeholder={tr("node.promptPlaceholder")}
-          value={nodeData.text ?? ""}
-          onChange={(event) => update({ text: event.target.value })}
-        />
+        <div className="space-y-1.5">
+          <NodeMasterPromptBar data={nodeData} onPatch={update} />
+          <textarea
+            className="field nodrag min-h-[96px] text-[13px]"
+            placeholder={tr("node.promptPlaceholder")}
+            value={nodeData.text ?? ""}
+            onChange={(event) => update({ text: event.target.value })}
+          />
+        </div>
       }
     >
       <NodePorts out="text" />
@@ -199,14 +206,24 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
   const project = useStudio((s) => s.project);
   const nodeData = data as StudioNodeData;
 
+  const isVideoMedia = Boolean(nodeData.videoUrl || nodeData.result?.kind === "video");
+  const video = nodeData.videoUrl || (nodeData.result?.kind === "video" ? nodeData.result.url : undefined);
+  const preview = !isVideoMedia ? (nodeData.imageUrl || (nodeData.result?.kind === "image" ? nodeData.result.url : undefined)) : undefined;
+
   const upload = useCallback(
     async (file: File) => {
       setBusy(true);
       try {
         const { api } = await import("@/lib/api-client");
         const asset = await api.assets.upload(file, project?.id ?? null);
-        update({ imageUrl: asset.url, result: asset });
-        toast(tr("toast.uploaded"), "success");
+        const isVid = file.type.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(file.name);
+        if (isVid) {
+          update({ videoUrl: asset.url, imageUrl: undefined, result: asset, name: file.name, status: "done" });
+          toast("Đã tải lên video thành công!", "success");
+        } else {
+          update({ imageUrl: asset.url, videoUrl: undefined, result: asset, name: file.name, status: "done" });
+          toast(tr("toast.uploaded"), "success");
+        }
       } catch (error) {
         toast(error instanceof Error ? error.message : "Tải lên thất bại", "error");
       } finally {
@@ -216,16 +233,15 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
     [project?.id, toast, tr, update],
   );
 
-  const preview = nodeData.imageUrl || nodeData.result?.url;
-
   return (
     <TapFrame
       id={id}
       selected={selected}
-      label="Ảnh"
-      icon={ImageIcon}
+      label={isVideoMedia ? "Video nguồn" : "Ảnh nguồn"}
+      icon={isVideoMedia ? Play : ImageIcon}
       data={nodeData}
       preview={preview}
+      video={video}
       canRun={false}
       busy={busy}
       onMediaClick={() => selected && inputRef.current?.click()}
@@ -234,22 +250,27 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
         if (file) upload(file);
       }}
       editor={
-        <button type="button" className="nodrag w-full rounded-xl bg-white/10 py-2 text-[12.5px] text-white" onClick={() => inputRef.current?.click()}>
-          {busy ? "Đang tải…" : tr("node.uploadHint")}
+        <button
+          type="button"
+          className="nodrag flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-[12.5px] text-white hover:bg-white/20 transition"
+          onClick={() => inputRef.current?.click()}
+        >
+          {busy ? "Đang tải…" : "Đổi ảnh hoặc video"}
         </button>
       }
     >
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*"
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) upload(file);
+          event.target.value = "";
         }}
       />
-      <NodePorts out="image" />
+      <NodePorts out={isVideoMedia ? "video" : "image"} />
     </TapFrame>
   );
 });
@@ -265,9 +286,40 @@ function PillSelect({
 }: {
   value: string;
   onChange: (value: string) => void;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; group?: string }[];
   className?: string;
 }) {
+  const hasGroup = options.some((o) => !!o.group);
+  if (!hasGroup) {
+    return (
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={clsx(
+          "nodrag truncate rounded-full border border-ink-700 bg-ink-900/80 px-2.5 py-1 text-[11px] text-ink-200 outline-none transition hover:border-ink-600",
+          className,
+        )}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  const groups: Record<string, { value: string; label: string }[]> = {};
+  const ungrouped: { value: string; label: string }[] = [];
+  for (const opt of options) {
+    if (opt.group) {
+      if (!groups[opt.group]) groups[opt.group] = [];
+      groups[opt.group].push(opt);
+    } else {
+      ungrouped.push(opt);
+    }
+  }
+
   return (
     <select
       value={value}
@@ -277,10 +329,19 @@ function PillSelect({
         className,
       )}
     >
-      {options.map((option) => (
+      {ungrouped.map((option) => (
         <option key={option.value} value={option.value}>
           {option.label}
         </option>
+      ))}
+      {Object.entries(groups).map(([grp, items]) => (
+        <optgroup key={grp} label={`── ${grp} ──`}>
+          {items.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </optgroup>
       ))}
     </select>
   );
@@ -292,6 +353,7 @@ export const GenerateNode = memo(function GenerateNode({ id, data, selected }: N
   const nodeData = data as StudioNodeData;
   const models = useModelsOfKind(nodeData.modelKind ?? "image");
   const model = useModelById(nodeData.modelId);
+  const providerMeta = getProviderMeta(model?.provider || model?.id);
   const run = useRunNode();
   const result = nodeData.result;
   const imageTags = useConnectedImageTags(id);
@@ -301,13 +363,14 @@ export const GenerateNode = memo(function GenerateNode({ id, data, selected }: N
     <TapFrame
       id={id}
       selected={selected}
-      label={isVideo ? "Video" : "Ảnh"}
+      label={isVideo ? "Tạo video" : "Tạo ảnh"}
       icon={isVideo ? Play : ImageIcon}
       data={nodeData}
       preview={result?.kind === "image" ? result.url : undefined}
       video={result?.kind === "video" ? result.url : undefined}
       editor={
         <div className="space-y-2">
+          <NodeMasterPromptBar data={nodeData} onPatch={update} kind={isVideo ? "video" : "image"} />
           <MentionTextarea
             className="field nodrag min-h-[72px] text-[12.5px]"
             placeholder={tr("node.promptPlaceholder")}
@@ -316,13 +379,43 @@ export const GenerateNode = memo(function GenerateNode({ id, data, selected }: N
             tags={imageTags}
           />
           <div className="flex flex-wrap items-center gap-1.5">
+            {model && (
+              <span
+                className="nodrag flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-medium text-white/80"
+                title={`Nguồn: ${providerMeta.label}`}
+              >
+                <span>{providerMeta.icon}</span>
+                <span>{providerMeta.short}</span>
+              </span>
+            )}
             <PillSelect
               value={nodeData.modelId ?? ""}
-              onChange={(value) => update(value.startsWith("iooai:") ? { modelId: value, duration: 10, resolution: "720p", aspect: "16:9" } : { modelId: value })}
-              className="max-w-[120px]"
+              onChange={(value) => {
+                if (value.startsWith("iooai:")) {
+                  update({ modelId: value, duration: 10, resolution: "720p", aspect: "16:9" });
+                } else if (value.includes("piapi")) {
+                  update({
+                    modelId: value,
+                    duration: nodeData.duration && nodeData.duration >= 4 && nodeData.duration <= 15 ? nodeData.duration : 5,
+                    resolution: nodeData.resolution ?? "480p",
+                  });
+                } else if (value.includes("veo")) {
+                  update({
+                    modelId: value,
+                    duration: [4, 6, 8].includes(nodeData.duration ?? 0) ? nodeData.duration : 6,
+                  });
+                } else {
+                  update({ modelId: value });
+                }
+              }}
+              className="max-w-[130px]"
               options={[
                 { value: "", label: models.length ? tr("node.model") : tr("node.noModel") },
-                ...models.map((item) => ({ value: item.id, label: item.label })),
+                ...models.map((item) => ({
+                  value: item.id,
+                  label: item.label,
+                  group: getProviderMeta(item.provider || item.id).short,
+                })),
               ]}
             />
             <PillSelect
@@ -387,7 +480,7 @@ export const UpscaleNode = memo(function UpscaleNode({ id, data, selected }: Nod
     <TapFrame
       id={id}
       selected={selected}
-      label="Ảnh"
+      label="Upscale"
       icon={ZoomIn}
       data={nodeData}
       preview={nodeData.result?.url}
@@ -400,7 +493,11 @@ export const UpscaleNode = memo(function UpscaleNode({ id, data, selected }: Nod
               className="max-w-[140px]"
               options={[
                 { value: "", label: models.length ? tr("node.model") : tr("node.noModel") },
-                ...models.map((item) => ({ value: item.id, label: item.label })),
+                ...models.map((item) => ({
+                  value: item.id,
+                  label: item.label,
+                  group: getProviderMeta(item.provider || item.id).short,
+                })),
               ]}
             />
             {[2, 4, 8].map((scale) => (
@@ -441,7 +538,7 @@ export const TrainNode = memo(function TrainNode({ id, data, selected }: NodePro
     <TapFrame
       id={id}
       selected={selected}
-      label="Train"
+      label="Train model"
       icon={BrainCircuit}
       data={nodeData}
       text={nodeData.name || "Model của tôi"}
@@ -455,7 +552,11 @@ export const TrainNode = memo(function TrainNode({ id, data, selected }: NodePro
               className="max-w-[150px]"
               options={[
                 { value: "", label: models.length ? tr("node.model") : tr("node.noModel") },
-                ...models.map((item) => ({ value: item.id, label: item.label })),
+                ...models.map((item) => ({
+                  value: item.id,
+                  label: item.label,
+                  group: getProviderMeta(item.provider || item.id).short,
+                })),
               ]}
             />
             <span className="flex items-center gap-1 rounded-full border border-white/15 px-2 py-1 text-[11px] text-white/70">
@@ -489,8 +590,8 @@ export const OutputNode = memo(function OutputNode({ id, data, selected }: NodeP
     <TapFrame
       id={id}
       selected={selected}
-      label={isVideo ? "Video" : "Ảnh"}
-      icon={isVideo ? Play : ImageIcon}
+      label="Kết quả"
+      icon={Check}
       data={nodeData}
       preview={asset?.kind === "image" ? asset.url : undefined}
       video={isVideo ? asset?.url : undefined}
@@ -526,7 +627,7 @@ export const FashionTryOnNode = memo(function FashionTryOnNode({ id, data, selec
     <TapFrame
       id={id}
       selected={selected}
-      label="Ảnh"
+      label="Thử đồ AI"
       icon={Shirt}
       data={nodeData}
       preview={result?.kind === "video" ? garmentPreview : result?.url || garmentPreview}
@@ -560,23 +661,56 @@ export const FashionComposeNode = memo(function FashionComposeNode({ id, data, s
   const nodeData = data as StudioNodeData;
   const run = useRunNode();
   const result = nodeData.result;
+  const { setNodes } = useReactFlow();
+
+  const convertToGenerate = useCallback(() => {
+    setNodes((nodes) =>
+      nodes.map((n) =>
+        n.id === id
+          ? {
+              ...n,
+              type: "generate",
+              data: {
+                ...n.data,
+                modelKind: "video",
+                modelId: "iooai:omni_flash_10s",
+                aspect: "9:16",
+                duration: 10,
+                resolution: "720p",
+                prompt: "Người mẫu mặc trang phục sải bước tự tin, phong cách lookbook thời trang cao cấp.",
+                status: "idle",
+                error: null,
+              },
+            }
+          : n,
+      ),
+    );
+  }, [id, setNodes]);
 
   return (
     <TapFrame
       id={id}
       selected={selected}
-      label="Video"
-      icon={Play}
+      label="Ghép Lookbook"
+      icon={Columns}
       data={nodeData}
       video={result?.url}
       editor={
         <div className="space-y-2">
-          <p className="text-[11px] text-white/45">Lookbook 9:16 · ảnh 1 người mẫu, ảnh 2 trang phục, video hoặc ảnh thử đồ.</p>
+          <p className="text-[11px] text-white/45">Ghép 60:40 (cần 1 video có sẵn). Hoặc chuyển sang Tạo Video AI bên dưới:</p>
+          <button
+            type="button"
+            onClick={convertToGenerate}
+            className="nodrag flex w-full items-center justify-center gap-1.5 rounded-xl border border-sky-400/40 bg-sky-500/20 py-2 text-[11.5px] font-medium text-sky-200 hover:bg-sky-500/30"
+          >
+            <Play size={12} />
+            Đổi sang Tạo Video AI (Có Model)
+          </button>
           <input className="field nodrag text-[12px] font-semibold" placeholder="Tiêu đề" value={nodeData.headline ?? "HÃY NHỚ"} onChange={(event) => update({ headline: event.target.value })} />
           <input className="field nodrag text-[12px]" placeholder="Tiêu đề phụ" value={nodeData.subheadline ?? "Bí quyết phối đồ"} onChange={(event) => update({ subheadline: event.target.value })} />
           <button onClick={() => run(id)} disabled={nodeData.status === "running"} className="nodrag flex w-full items-center justify-center gap-1.5 rounded-xl bg-white py-1.5 text-[12px] font-medium text-black disabled:opacity-50">
             {nodeData.status === "running" ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-            {nodeData.status === "running" ? tr("node.running") : "Xuất video"}
+            {nodeData.status === "running" ? tr("node.running") : "Xuất video ghép"}
           </button>
         </div>
       }
@@ -766,8 +900,53 @@ export const GroupNode = memo(function GroupNode({ id, data, selected }: NodePro
   );
 });
 
+export const PromptMasterNode = memo(function PromptMasterNode({ id, data, selected }: NodeProps) {
+  const update = useNodeUpdater(id);
+  const run = useRunNode();
+  const nodeData = data as StudioNodeData;
+  return (
+    <TapFrame
+      id={id}
+      selected={selected}
+      label="Trợ lý Prompt Bậc Thầy"
+      icon={Sparkles}
+      data={nodeData}
+      text={nodeData.text ?? nodeData.prompt ?? ""}
+      canRun={true}
+      width={250}
+      editor={
+        <div className="space-y-2">
+          <NodeMasterPromptBar data={{ ...nodeData, masterPromptEnabled: true }} onPatch={update} />
+          <textarea
+            className="field nodrag min-h-[90px] text-[12.5px]"
+            placeholder="Nhập ý tưởng thô hoặc nối câu lệnh vào đây..."
+            value={nodeData.text ?? nodeData.prompt ?? ""}
+            onChange={(event) => update({ text: event.target.value, prompt: event.target.value })}
+          />
+          <button
+            type="button"
+            onClick={() => run(id)}
+            disabled={nodeData.status === "running"}
+            className="nodrag flex w-full items-center justify-center gap-1.5 rounded-xl bg-amber-400 py-1.5 text-[12px] font-semibold text-black hover:bg-amber-300 transition disabled:opacity-50"
+          >
+            {nodeData.status === "running" ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Sparkles size={12} />
+            )}
+            {nodeData.status === "running" ? "Đang hoàn thiện..." : "Chạy Hoàn Thiện AI"}
+          </button>
+        </div>
+      }
+    >
+      <NodePorts out="text" accept="text" />
+    </TapFrame>
+  );
+});
+
 export const NODE_TYPES = {
   prompt: PromptNode,
+  prompt_master: PromptMasterNode,
   image: ImageNode,
   generate: GenerateNode,
   upscale: UpscaleNode,

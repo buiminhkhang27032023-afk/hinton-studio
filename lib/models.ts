@@ -275,10 +275,106 @@ const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
       timeout: 3600,
     },
   },
+  {
+    id: "runninghub:wan-2.1",
+    label: "RunningHub · Wan 2.1 (Võ thuật & Siêu năng lực)",
+    kind: "video",
+    provider: "runninghub",
+    description: "Alibaba Wan 2.1 qua RunningHub ComfyUI: Đỉnh cao thế giới về hiệu ứng đánh nhau, sóng xung kích, sét lửa và góc máy 3D xoay quanh điểm nổ.",
+    config: {
+      endpoint: "/task/openapi/create",
+      method: "POST",
+      body: {
+        workflowId: "wan_2_1_video_workflow",
+        apiKey: "{{apiKey}}",
+        nodeInputs: { prompt: "{{prompt}}", image: "{{image}}" },
+      },
+      jobPath: "data.taskId",
+      pollEndpoint: "/task/openapi/status",
+      pollMethod: "POST",
+      statusPath: "data.status",
+      doneValues: ["SUCCESS", "completed"],
+      failedValues: ["FAILED", "failed", "error"],
+      resultPath: "data.outputUrl",
+      timeout: 900,
+    },
+  },
+  {
+    id: "runninghub:kling-1.5",
+    label: "RunningHub · Kling 1.5 (Chuyển động người thật & Cận chiến)",
+    kind: "video",
+    provider: "runninghub",
+    description: "Kling AI qua RunningHub ComfyUI: Xuất sắc về mô phỏng động tác võ thuật, đấm đá mượt mà và camera dolly/pan điện ảnh.",
+    config: {
+      endpoint: "/task/openapi/create",
+      method: "POST",
+      body: {
+        workflowId: "kling_1_5_video_workflow",
+        apiKey: "{{apiKey}}",
+        nodeInputs: { prompt: "{{prompt}}", image: "{{image}}" },
+      },
+      jobPath: "data.taskId",
+      pollEndpoint: "/task/openapi/status",
+      pollMethod: "POST",
+      statusPath: "data.status",
+      doneValues: ["SUCCESS", "completed"],
+      failedValues: ["FAILED", "failed", "error"],
+      resultPath: "data.outputUrl",
+      timeout: 900,
+    },
+  },
+  {
+    id: "runninghub:video-comfyui",
+    label: "RunningHub · Video ComfyUI Task",
+    kind: "video",
+    provider: "runninghub",
+    description: "Chạy quy trình sinh video ComfyUI / Kling qua RunningHub OpenAPI",
+    config: {
+      endpoint: "/task/openapi/create",
+      method: "POST",
+      body: {
+        workflowId: "default_video_workflow",
+        apiKey: "{{apiKey}}",
+        nodeInputs: { prompt: "{{prompt}}", image: "{{image}}" },
+      },
+      jobPath: "data.taskId",
+      pollEndpoint: "/task/openapi/status",
+      pollMethod: "POST",
+      statusPath: "data.status",
+      doneValues: ["SUCCESS", "completed"],
+      failedValues: ["FAILED", "failed", "error"],
+      resultPath: "data.outputUrl",
+      timeout: 900,
+    },
+  },
+  {
+    id: "runninghub:image-flux",
+    label: "RunningHub · Flux / SD Image Task",
+    kind: "image",
+    provider: "runninghub",
+    description: "Sinh ảnh qua ComfyUI Flux / SD workflow trên RunningHub",
+    config: {
+      endpoint: "/task/openapi/create",
+      method: "POST",
+      body: {
+        workflowId: "default_image_flux",
+        apiKey: "{{apiKey}}",
+        nodeInputs: { prompt: "{{prompt}}" },
+      },
+      jobPath: "data.taskId",
+      pollEndpoint: "/task/openapi/status",
+      pollMethod: "POST",
+      statusPath: "data.status",
+      doneValues: ["SUCCESS", "completed"],
+      failedValues: ["FAILED", "failed", "error"],
+      resultPath: "data.outputUrl",
+      timeout: 300,
+    },
+  },
 ];
 
 /** Bump when a preset's shape changes so existing installs pick it up. */
-const PRESET_VERSION = 12;
+const PRESET_VERSION = 14;
 
 export function seedModels(): void {
   const db = getDb();

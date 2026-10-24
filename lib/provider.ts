@@ -15,15 +15,34 @@ export const PIAPI_PROVIDER: ProviderSettings = {
   authHeader: "x-api-key",
 };
 
+export const RUNNINGHUB_PROVIDER: ProviderSettings = {
+  baseUrl: "https://www.runninghub.ai",
+  apiKey: "",
+  proxyAssets: true,
+  authHeader: "bearer",
+};
+
+export const RUNNINGHUB_LLM_PROVIDER: ProviderSettings = {
+  baseUrl: "https://llm.runninghub.ai/v1",
+  apiKey: "",
+  proxyAssets: true,
+  authHeader: "bearer",
+};
+
 export const IOOAI_PROVIDER: ProviderSettings = {
   baseUrl: "https://api.iooai.cn/v1", apiKey: "", proxyAssets: true, authHeader: "bearer",
 };
 
 const PROVIDER_SETTING_KEY: Record<string, { key: string; fallback: ProviderSettings }> = {
   "openai-compatible": { key: "provider", fallback: DEFAULT_PROVIDER },
+  provider: { key: "provider", fallback: DEFAULT_PROVIDER },
   iooai: { key: "provider_iooai", fallback: IOOAI_PROVIDER },
   piapi: { key: "provider_piapi", fallback: PIAPI_PROVIDER },
+  runninghub: { key: "provider_runninghub", fallback: RUNNINGHUB_PROVIDER },
+  "runninghub-llm": { key: "provider_runninghub", fallback: RUNNINGHUB_LLM_PROVIDER },
 };
+
+export * from "./provider-meta";
 
 export function getProvider(id: string = "openai-compatible"): ProviderSettings {
   const entry = PROVIDER_SETTING_KEY[id] ?? PROVIDER_SETTING_KEY["openai-compatible"];
@@ -123,12 +142,15 @@ export async function runModel(input: RunModelInput): Promise<RunModelResult> {
 async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
   const provider = getProvider(input.providerId);
   if (!provider.apiKey) {
-    const where = input.providerId === "iooai" ? "Cài đặt → IOOAI" : input.providerId === "piapi" ? "Cài đặt → PiAPI" : "Cài đặt → Kết nối API";
+    const where = input.providerId === "iooai" ? "Cài đặt → IOOAI" : input.providerId === "piapi" ? "Cài đặt → PiAPI" : input.providerId?.startsWith("runninghub") ? "Cài đặt → RunningHub" : "Cài đặt → Kết nối API";
     throw new Error(`Chưa cấu hình API key. Vào ${where} để nhập key.`);
   }
 
   const base = provider.baseUrl.replace(/\/+$/, "");
   const vars: Record<string, unknown> = { ...input.vars, model: input.vars.model ?? input.model };
+  if (input.providerId?.startsWith("runninghub")) {
+    vars.apiKey = provider.apiKey;
+  }
   if (input.providerId === "iooai") {
     const images = Array.isArray(vars.images) ? vars.images : [];
     if (!images.length || images.length > 7 || images.some((url) => {
@@ -169,17 +191,22 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
    */
   const buildGetUrl = (endpoint: string) => `${base}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
 
-  const send = async (endpoint: string, attempts = 6, verb?: "GET" | "POST") => {
+  const send = async (endpoint: string, attempts = 6, verb?: "GET" | "POST", customBody?: unknown) => {
     const useMethod = verb ?? method;
     const url = useMethod === "GET" ? buildGetUrl(endpoint) : buildUrl(endpoint);
     const headers: Record<string, string> = {
       ...authHeaders(provider),
       ...(input.config.headers ?? {}),
     };
+    if (input.providerId?.startsWith("runninghub") || base.includes("runninghub")) {
+      try { headers["Host"] = new URL(base).host; } catch {}
+    }
     const baseInit: RequestInit = { method: useMethod, headers };
     if (useMethod === "POST") {
       headers["Content-Type"] = "application/json";
-      baseInit.body = JSON.stringify(stripEmpty(fillTemplate(input.config.body ?? {}, vars) as Record<string, unknown>));
+      baseInit.body = customBody !== undefined
+        ? JSON.stringify(customBody)
+        : JSON.stringify(stripEmpty(fillTemplate(input.config.body ?? {}, vars) as Record<string, unknown>));
     }
 
     let lastError = "";
@@ -262,7 +289,9 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
 
     while (Date.now() < deadline) {
       await sleep(3000);
-      const pollJson = await send(input.config.pollEndpoint.replace("{{job}}", String(jobId)), 6, "GET");
+      const pollMethod = input.config.pollMethod ?? (input.providerId === "runninghub" ? "POST" : "GET");
+      const pollBody = pollMethod === "POST" ? { taskId: String(jobId) } : undefined;
+      const pollJson = await send(input.config.pollEndpoint.replace("{{job}}", String(jobId)), 6, pollMethod, pollBody);
       const status = String(pick(pollJson, statusPath) ?? "").toLowerCase();
       lastStatus = status;
 
@@ -365,8 +394,15 @@ export function guessMime(source: string, kind: ModelKind): string {
 export async function listProviderModels(providerId = "openai-compatible"): Promise<unknown[]> {
   const provider = getProvider(providerId);
   if (!provider.apiKey) throw new Error("Chưa có API key");
-  const res = await fetch(`${provider.baseUrl.replace(/\/+$/, "")}/models`, {
-    headers: { ...authHeaders(provider), Accept: "application/json" },
+  const isRunningHub = providerId === "runninghub" || providerId === "runninghub-llm";
+  const targetUrl = isRunningHub
+    ? "https://llm.runninghub.ai/v1/models"
+    : `${provider.baseUrl.replace(/\/+$/, "")}/models`;
+  const headers: Record<string, string> = isRunningHub
+    ? { Authorization: `Bearer ${provider.apiKey}`, Accept: "application/json" }
+    : { ...authHeaders(provider), Accept: "application/json" };
+  const res = await fetch(targetUrl, {
+    headers,
     signal: AbortSignal.timeout(30_000),
   });
   const text = await res.text();

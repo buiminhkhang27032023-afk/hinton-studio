@@ -14,8 +14,18 @@ import { jobsMap, type SeeCutJob } from "@/lib/seecut-jobs";
 const JOBS_DIR = path.join(process.cwd(), "data", "seecut_jobs");
 fs.mkdirSync(JOBS_DIR, { recursive: true });
 
-const PYTHON_PATH = process.env.SEECUT_PYTHON || (process.platform === "win32" ? "c:\\Users\\Chen Qianyu\\SeeCut\\.venv\\Scripts\\python.exe" : "python3");
-const SEECUT_DIR = process.env.SEECUT_DIR || (process.platform === "win32" ? "c:\\Users\\Chen Qianyu\\SeeCut" : path.join(process.cwd(), "vendor", "SeeCut"));
+const defaultSeeCutDir = fs.existsSync(path.join(process.cwd(), "..", "seecut"))
+  ? path.resolve(process.cwd(), "..", "seecut")
+  : fs.existsSync(path.join(process.cwd(), "seecut"))
+  ? path.resolve(process.cwd(), "seecut")
+  : (process.platform === "win32" ? "c:\\Users\\Chen Qianyu\\SeeCut" : path.join(process.cwd(), "vendor", "SeeCut"));
+
+const SEECUT_DIR = process.env.SEECUT_DIR || defaultSeeCutDir;
+const defaultPython = fs.existsSync(path.join(SEECUT_DIR, ".venv", "Scripts", "python.exe"))
+  ? path.join(SEECUT_DIR, ".venv", "Scripts", "python.exe")
+  : (process.platform === "win32" ? "python" : "python3");
+
+const PYTHON_PATH = process.env.SEECUT_PYTHON || defaultPython;
 
 export async function GET() {
   return NextResponse.json({

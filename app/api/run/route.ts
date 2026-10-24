@@ -46,6 +46,8 @@ export async function POST(request: Request) {
   // Inline locally stored images — the provider cannot reach our /api/files URLs.
   const vars: Record<string, unknown> = { ...(body.vars ?? {}) };
   if (model.provider !== "iooai" && typeof vars.image === "string") vars.image = localUrlToDataUri(vars.image);
+  if (model.provider !== "iooai" && typeof vars.modelImage === "string") vars.modelImage = localUrlToDataUri(vars.modelImage);
+  if (model.provider !== "iooai" && typeof vars.garmentImage === "string") vars.garmentImage = localUrlToDataUri(vars.garmentImage);
   if (model.provider !== "iooai" && Array.isArray(vars.images)) {
     vars.images = vars.images.map((item) =>
       typeof item === "string" ? localUrlToDataUri(item) : item,

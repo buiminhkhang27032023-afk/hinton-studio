@@ -26,6 +26,7 @@ import {
 import {
   BrainCircuit,
   Check,
+  Clapperboard,
   Image as ImageIcon,
   Layers,
   Loader2,
@@ -40,6 +41,9 @@ import {
   Copy,
   Trash2,
   Minus,
+  Undo2,
+  Redo2,
+  Upload,
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api-client";
@@ -108,6 +112,7 @@ function minimapColor(): string {
 
 const NODE_LIBRARY = [
   { type: "prompt", icon: Type, label: "Câu lệnh", hint: "Văn bản mô tả", accent: "text-violet-soft" },
+  { type: "prompt_master", icon: Sparkles, label: "Trợ lý Bậc Thầy", hint: "Tối ưu hóa câu lệnh AI", accent: "text-amber-300" },
   { type: "image", icon: ImageIcon, label: "Ảnh nguồn", hint: "Tải ảnh lên", accent: "text-sky-300" },
   { type: "fashion_tryon", icon: Shirt, label: "Thử đồ AI", hint: "Ghép người + đồ", accent: "text-rose-300" },
   { type: "fashion_compose", icon: SplitSquareVertical, label: "Ghép Lookbook", hint: "Video chia 60:40 (9:16)", accent: "text-amber-300" },
@@ -127,8 +132,20 @@ function itemData(item: LibItem): { modelKind?: string } | undefined {
 function defaultData(type: string, extra?: Record<string, unknown>): StudioNodeData {
   const base: StudioNodeData = { status: "idle" };
   if (type === "prompt") return { ...base, text: "" };
+  if (type === "prompt_master") return { ...base, text: "", masterPromptEnabled: true };
   if (type === "image") return { ...base };
-  if (type === "generate") return { ...base, prompt: "", aspect: "16:9", duration: 5 };
+  if (type === "generate") {
+    const isVideo = (extra as any)?.modelKind === "video";
+    return {
+      ...base,
+      prompt: "",
+      aspect: isVideo ? "16:9" : "1:1",
+      duration: isVideo ? 10 : 5,
+      modelKind: isVideo ? "video" : "image",
+      modelId: isVideo ? "iooai:omni_flash_10s" : "req/gpt-image-2",
+      resolution: isVideo ? "720p" : "1080p",
+    };
+  }
   if (type === "upscale") return { ...base, scale: 2 };
   if (type === "train") return { ...base, name: "model-cua-toi", steps: 1000 };
   if (type === "fashion_tryon") return { ...base, prompt: "", modelId: "seed:image:gemini-compose" };
@@ -155,6 +172,120 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   const lastPaneClick = useRef(0);
   const ignorePaneClick = useRef(false);
   const { screenToFlowPosition, fitView, getViewport } = useReactFlow();
+
+  // Undo / Redo history stacks
+  const historyRef = useRef<{ nodes: StudioNode[]; edges: Edge[] }[]>([]);
+  const redoRef = useRef<{ nodes: StudioNode[]; edges: Edge[] }[]>([]);
+  const isUndoRedoAction = useRef(false);
+
+  const pushSnapshot = useCallback(() => {
+    if (isUndoRedoAction.current) return;
+    historyRef.current.push({
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(edges)),
+    });
+    if (historyRef.current.length > 50) historyRef.current.shift();
+    redoRef.current = [];
+  }, [nodes, edges]);
+
+  const undo = useCallback(() => {
+    if (historyRef.current.length === 0) {
+      toast("Không còn thao tác nào để hoàn tác", "default");
+      return;
+    }
+    const current = {
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(edges)),
+    };
+    redoRef.current.push(current);
+
+    const prev = historyRef.current.pop()!;
+    isUndoRedoAction.current = true;
+    setNodes(prev.nodes);
+    setEdges(prev.edges);
+    toast("Đã hoàn tác (Ctrl+Z)", "success");
+    setTimeout(() => {
+      isUndoRedoAction.current = false;
+    }, 100);
+  }, [nodes, edges, setEdges, setNodes, toast]);
+
+  const redo = useCallback(() => {
+    if (redoRef.current.length === 0) {
+      toast("Không có thao tác nào để làm lại", "default");
+      return;
+    }
+    const current = {
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(edges)),
+    };
+    historyRef.current.push(current);
+
+    const next = redoRef.current.pop()!;
+    isUndoRedoAction.current = true;
+    setNodes(next.nodes);
+    setEdges(next.edges);
+    toast("Đã làm lại (Ctrl+Y)", "success");
+    setTimeout(() => {
+      isUndoRedoAction.current = false;
+    }, 100);
+  }, [nodes, edges, setEdges, setNodes, toast]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          (activeEl as HTMLElement).isContentEditable);
+
+      if (isInput) return;
+
+      const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+      const modifier = isMac ? e.metaKey : e.ctrlKey;
+
+      if (modifier && e.key.toLowerCase() === "z" && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        undo();
+      } else if (
+        (modifier && e.key.toLowerCase() === "y") ||
+        (modifier && e.key.toLowerCase() === "z" && e.shiftKey)
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        redo();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [undo, redo]);
+
+  const handleNodesChange = useCallback(
+    (changes: Parameters<typeof onNodesChange>[0]) => {
+      if (changes.some((c) => c.type === "remove")) {
+        pushSnapshot();
+      }
+      onNodesChange(changes);
+    },
+    [onNodesChange, pushSnapshot],
+  );
+
+  const handleEdgesChange = useCallback(
+    (changes: Parameters<typeof onEdgesChange>[0]) => {
+      if (changes.some((c) => c.type === "remove")) {
+        pushSnapshot();
+      }
+      onEdgesChange(changes);
+    },
+    [onEdgesChange, pushSnapshot],
+  );
+
+  const onNodeDragStart = useCallback(() => {
+    pushSnapshot();
+  }, [pushSnapshot]);
+
 
   /* ------------------------------ persistence ----------------------------- */
 
@@ -240,6 +371,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
 
   const addNode = useCallback(
     (type: string, position?: { x: number; y: number }, extra?: Record<string, unknown>) => {
+      pushSnapshot();
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
       const spot =
         position ??
@@ -274,6 +406,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!isValidConnection(connection)) return;
+      pushSnapshot();
       setEdges((current) =>
         addEdge(
           {
@@ -358,6 +491,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
 
   const groupSelected = useCallback(() => {
     if (selectedIds.length < 2) return;
+    pushSnapshot();
     const selected = nodes.filter((n) => selectedIds.includes(n.id) && n.type !== "group");
     if (selected.length < 2) return;
 
@@ -438,8 +572,11 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       const node = list.find((item) => item.id === nodeId);
       if (!node) return;
 
-      if (!["prompt", "image", "result"].includes(node.type ?? "")) {
+      if (!["prompt", "prompt_master", "image", "result", "fashion_compose", "split_video"].includes(node.type ?? "")) {
         const data = node.data ?? {};
+        if (node.type === "fashion_tryon" && !data.modelId) {
+          data.modelId = "seed:image:gemini-compose";
+        }
         if (!data.modelId && node.type !== "train") {
           patchNode(nodeId, { status: "error", error: tr("node.needModel") });
           throw new Error(tr("node.needModel"));
@@ -501,6 +638,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
 
   const duplicateNode = useCallback(
     (nodeId: string) => {
+      pushSnapshot();
       const source = nodes.find((n) => n.id === nodeId);
       if (!source) return;
       const copy: StudioNode = {
@@ -517,6 +655,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
 
   const deleteNode = useCallback(
     (nodeId: string) => {
+      pushSnapshot();
       setNodes((current) => current.filter((n) => n.id !== nodeId));
       setEdges((current) => current.filter((e) => e.source !== nodeId && e.target !== nodeId));
       setMenu(null);
@@ -526,6 +665,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
 
   const deleteGroupWithMembers = useCallback(
     (groupId: string) => {
+      pushSnapshot();
       const memberIds = new Set(
         nodes.filter((n) => n.parentId === groupId).map((n) => n.id),
       );
@@ -580,62 +720,54 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   }, [runNode, selectedId, toast]);
 
   const loadFashionTemplate = useCallback(() => {
+    pushSnapshot();
     const templateNodes: StudioNode[] = [
       {
         id: "model_anchor",
         type: "image",
-        position: { x: 50, y: 180 },
+        position: { x: 40, y: 220 },
         data: {
+          name: "Ảnh người mẫu",
           imageUrl: "/fashion_sources/model_ref_1.jpg",
-          status: "done",
+          status: "idle",
         },
       },
       {
         id: "garment_1",
         type: "image",
-        position: { x: 50, y: 520 },
+        position: { x: 40, y: 520 },
         data: {
+          name: "Ảnh trang phục",
           imageUrl: "/fashion_sources/garment_1_blazer.jpg",
-          status: "done",
-        },
-      },
-      {
-        id: "tryon_1",
-        type: "fashion_tryon",
-        position: { x: 420, y: 300 },
-        data: {
-          prompt: "Phong cách công sở thanh lịch: Áo blazer tailored màu xám khói, áo thun trắng ôm dáng, thần thái cuốn hút sang trọng",
           status: "idle",
         },
       },
       {
-        id: "compose_1",
-        type: "fashion_compose",
-        position: { x: 820, y: 220 },
+        id: "video_ai_1",
+        type: "generate",
+        position: { x: 440, y: 320 },
         data: {
-          headline: "HÃY NHỚ",
-          subheadline: "Bí quyết phối đồ",
-          videoUrl: "/model2_evening_dress_runway.mp4",
-          imageUrl: "/fashion_sources/model_ref_1.jpg",
-          garmentUrl: "/fashion_sources/garment_1_blazer.jpg",
+          modelKind: "video",
+          modelId: "iooai:omni_flash_10s",
+          aspect: "9:16",
+          duration: 10,
+          resolution: "720p",
+          prompt: "Người mẫu mặc trang phục sải bước tự tin trên sàn diễn runway thời trang Paris, ánh sáng studio mềm mại, phong cách lookbook cao cấp, chuyển động tự nhiên.",
           status: "idle",
         },
       },
       {
         id: "result_1",
         type: "result",
-        position: { x: 1220, y: 260 },
+        position: { x: 860, y: 320 },
         data: { status: "idle" },
       },
     ];
 
     const templateEdges: Edge[] = [
-      { id: "e-m-tryon", source: "model_anchor", target: "tryon_1", targetHandle: "model", animated: true },
-      { id: "e-g-tryon", source: "garment_1", target: "tryon_1", targetHandle: "garment", animated: true },
-      { id: "e-m-comp", source: "model_anchor", target: "compose_1", targetHandle: "model", animated: true },
-      { id: "e-g-comp", source: "garment_1", target: "compose_1", targetHandle: "garment", animated: true },
-      { id: "e-tryon-comp", source: "tryon_1", target: "compose_1", targetHandle: "video", animated: true },
-      { id: "e-comp-res", source: "compose_1", target: "result_1", targetHandle: "in", animated: true },
+      { id: "e-m-v", source: "model_anchor", target: "video_ai_1", sourceHandle: "out", targetHandle: "in" },
+      { id: "e-g-v", source: "garment_1", target: "video_ai_1", sourceHandle: "out", targetHandle: "in" },
+      { id: "e-v-res", source: "video_ai_1", target: "result_1", sourceHandle: "out", targetHandle: "in" },
     ];
 
     setNodes(templateNodes);
@@ -644,6 +776,232 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     setTimeout(() => fitView({ padding: 0.25, duration: 400 }), 100);
   }, [fitView, setEdges, setNodes, toast]);
 
+  const loadFilmTemplate = useCallback(() => {
+    pushSnapshot();
+    const templateNodes: StudioNode[] = [
+      {
+        id: 'char_ref_1',
+        type: 'image',
+        position: { x: 40, y: 220 },
+        data: { name: 'Nhân vật chính 1', status: 'idle' },
+      },
+      {
+        id: 'char_ref_2',
+        type: 'image',
+        position: { x: 40, y: 560 },
+        data: { name: 'Nhân vật chính 2', status: 'idle' },
+      },
+      {
+        id: 'script_master',
+        type: 'prompt',
+        position: { x: 300, y: 80 },
+        data: {
+          text: 'Kịch bản tổng thể bộ phim: Mô tả phong cách điện ảnh (Cinematic 35mm), tone màu, bối cảnh xuyên suốt và tâm lý nhân vật.',
+        },
+      },
+      {
+        id: 'shot_1_prompt',
+        type: 'prompt',
+        position: { x: 300, y: 280 },
+        data: {
+          text: 'Phân cảnh 1 (Mở đầu): Thiết lập không gian, toàn cảnh nhân vật xuất hiện trong bối cảnh.',
+        },
+      },
+      {
+        id: 'shot_1_video',
+        type: 'generate',
+        position: { x: 620, y: 280 },
+        data: {
+          modelKind: 'video',
+          aspect: '16:9',
+          duration: 10,
+          resolution: '720p',
+          prompt: 'Phân cảnh 1: Thiết lập không gian...',
+          status: 'idle',
+        },
+      },
+      {
+        id: 'shot_2_prompt',
+        type: 'prompt',
+        position: { x: 300, y: 560 },
+        data: {
+          text: 'Phân cảnh 2 (Cao trào): Cận cảnh trung tâm biểu cảm đối thoại kịch tính.',
+        },
+      },
+      {
+        id: 'shot_2_video',
+        type: 'generate',
+        position: { x: 620, y: 560 },
+        data: {
+          modelKind: 'video',
+          aspect: '16:9',
+          duration: 10,
+          resolution: '720p',
+          prompt: 'Phân cảnh 2: Cận cảnh đối thoại...',
+          status: 'idle',
+        },
+      },
+      {
+        id: 'shot_3_prompt',
+        type: 'prompt',
+        position: { x: 300, y: 840 },
+        data: {
+          text: 'Phân cảnh 3 (Hạ màn): Góc máy xa dần, chuyển động chậm lột tả sự lắng đọng kết phim.',
+        },
+      },
+      {
+        id: 'shot_3_video',
+        type: 'generate',
+        position: { x: 620, y: 840 },
+        data: {
+          modelKind: 'video',
+          aspect: '16:9',
+          duration: 10,
+          resolution: '720p',
+          prompt: 'Phân cảnh 3: Kết thúc lắng đọng...',
+          status: 'idle',
+        },
+      },
+      {
+        id: 'master_output',
+        type: 'result',
+        position: { x: 960, y: 520 },
+        data: { status: 'idle' },
+      },
+    ];
+
+    const templateEdges: Edge[] = [
+      { id: 'e-c1-s1', source: 'char_ref_1', target: 'shot_1_video' },
+      { id: 'e-c1-s2', source: 'char_ref_1', target: 'shot_2_video' },
+      { id: 'e-c2-s2', source: 'char_ref_2', target: 'shot_2_video' },
+      { id: 'e-c1-s3', source: 'char_ref_1', target: 'shot_3_video' },
+      { id: 'e-p1-s1', source: 'shot_1_prompt', target: 'shot_1_video' },
+      { id: 'e-p2-s2', source: 'shot_2_prompt', target: 'shot_2_video' },
+      { id: 'e-p3-s3', source: 'shot_3_prompt', target: 'shot_3_video' },
+      { id: 'e-s1-out', source: 'shot_1_video', target: 'master_output' },
+      { id: 'e-s2-out', source: 'shot_2_video', target: 'master_output' },
+      { id: 'e-s3-out', source: 'shot_3_video', target: 'master_output' },
+    ];
+
+    setNodes(templateNodes);
+    setEdges(templateEdges.map((edge) => decorateEdge(edge, templateNodes)));
+    toast('Đã nạp quy trình làm phim điện ảnh phân cảnh!', 'success');
+    setTimeout(() => fitView({ padding: 0.25, duration: 400 }), 100);
+  }, [fitView, setEdges, setNodes, toast]);
+
+
+  /* ---------------------- upload & clipboard paste ----------------------- */
+
+  const getCenterFlowPosition = useCallback(() => {
+    const width = wrapper.current?.clientWidth ?? window.innerWidth;
+    const height = wrapper.current?.clientHeight ?? window.innerHeight;
+    return screenToFlowPosition({
+      x: width / 2 - 80 + (Math.random() * 40 - 20),
+      y: height / 2 - 100 + (Math.random() * 40 - 20),
+    });
+  }, [screenToFlowPosition]);
+
+  const handleUploadFiles = useCallback(
+    async (files: File[], customPosition?: { x: number; y: number }) => {
+      const validFiles = files.filter(
+        (f) =>
+          f.type.startsWith("image/") ||
+          f.type.startsWith("video/") ||
+          /\.(png|jpe?g|webp|gif|svg|mp4|webm|mov)$/i.test(f.name),
+      );
+      if (validFiles.length === 0) {
+        toast("Vui lòng chọn hoặc dán file ảnh (PNG, JPG, WEBP...) hoặc video (MP4, WEBM, MOV...)", "default");
+        return;
+      }
+
+      pushSnapshot();
+      const basePos = customPosition ?? getCenterFlowPosition();
+
+      // If exactly 1 file and an image node is currently selected, update that node directly!
+      if (validFiles.length === 1 && selectedId) {
+        const selNode = nodesRef.current.find((n) => n.id === selectedId);
+        if (selNode && selNode.type === "image") {
+          const file = validFiles[0];
+          const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(file.name);
+          patchNode(selectedId, { status: "running" });
+          try {
+            const asset = await api.assets.upload(file, project.id);
+            if (isVideo) {
+              patchNode(selectedId, {
+                videoUrl: asset.url,
+                imageUrl: undefined,
+                result: asset,
+                name: file.name,
+                status: "done",
+              });
+              toast(`Đã tải lên video: ${file.name}`, "success");
+            } else {
+              patchNode(selectedId, {
+                imageUrl: asset.url,
+                videoUrl: undefined,
+                result: asset,
+                name: file.name,
+                status: "done",
+              });
+              toast(`Đã tải lên ảnh: ${file.name}`, "success");
+            }
+          } catch (err) {
+            patchNode(selectedId, {
+              status: "error",
+              error: err instanceof Error ? err.message : "Tải lên thất bại",
+            });
+            toast(err instanceof Error ? err.message : "Tải lên thất bại", "error");
+          }
+          return;
+        }
+      }
+
+      // Otherwise, create new nodes for each file!
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(file.name);
+        const pos = {
+          x: basePos.x + (i % 3) * 200,
+          y: basePos.y + Math.floor(i / 3) * 240,
+        };
+        const id = addNode("image", pos, {
+          name: file.name,
+          status: "running",
+        });
+
+        try {
+          const asset = await api.assets.upload(file, project.id);
+          if (isVideo) {
+            patchNode(id, {
+              videoUrl: asset.url,
+              imageUrl: undefined,
+              result: asset,
+              name: file.name,
+              status: "done",
+            });
+            toast(`Đã tải lên video: ${file.name}`, "success");
+          } else {
+            patchNode(id, {
+              imageUrl: asset.url,
+              videoUrl: undefined,
+              result: asset,
+              name: file.name,
+              status: "done",
+            });
+            toast(`Đã tải lên ảnh: ${file.name}`, "success");
+          }
+        } catch (err) {
+          patchNode(id, {
+            status: "error",
+            error: err instanceof Error ? err.message : "Tải lên thất bại",
+          });
+          toast(err instanceof Error ? err.message : "Tải lên thất bại", "error");
+        }
+      }
+    },
+    [addNode, getCenterFlowPosition, patchNode, project.id, pushSnapshot, selectedId, toast],
+  );
+
   /* -------------------------------- drop zone ----------------------------- */
 
   const onDrop = useCallback(
@@ -651,6 +1009,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       event.preventDefault();
       const raw = event.dataTransfer.getData("application/atelier-node");
       if (raw) {
+        pushSnapshot();
         let payload: { type: string; data?: Record<string, unknown> } = { type: raw };
         try {
           payload = JSON.parse(raw);
@@ -660,21 +1019,90 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         addNode(payload.type, screenToFlowPosition({ x: event.clientX, y: event.clientY }), payload.data);
         return;
       }
-      const file = event.dataTransfer.files?.[0];
-      if (file && file.type.startsWith("image/")) {
-        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-        const id = addNode("image", position);
-        try {
-          const asset = await api.assets.upload(file, project.id);
-          patchNode(id, { imageUrl: asset.url, result: asset });
-          toast(tr("toast.uploaded"), "success");
-        } catch (error) {
-          toast(error instanceof Error ? error.message : "Tải lên thất bại", "error");
-        }
+
+      const files = Array.from(event.dataTransfer.files || []);
+      if (files.length > 0) {
+        const dropPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        handleUploadFiles(files, dropPos);
       }
     },
-    [addNode, patchNode, project.id, screenToFlowPosition, toast, tr],
+    [addNode, handleUploadFiles, pushSnapshot, screenToFlowPosition],
   );
+
+  /* --------------------- Global / Canvas Paste (Ctrl+V) ------------------- */
+
+  useEffect(() => {
+    const handlePaste = async (event: ClipboardEvent) => {
+      // Don't intercept if user is typing in an input, textarea, or contentEditable element!
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.isContentEditable)
+      ) {
+        return;
+      }
+
+      const clipboardData = event.clipboardData;
+      if (!clipboardData) return;
+
+      // 1. Check for files or items with kind === 'file' (screenshots, copied files)
+      const files: File[] = [];
+      if (clipboardData.files && clipboardData.files.length > 0) {
+        for (let i = 0; i < clipboardData.files.length; i++) {
+          files.push(clipboardData.files[i]);
+        }
+      } else if (clipboardData.items && clipboardData.items.length > 0) {
+        for (let i = 0; i < clipboardData.items.length; i++) {
+          const item = clipboardData.items[i];
+          if (item.kind === "file") {
+            const f = item.getAsFile();
+            if (f) files.push(f);
+          }
+        }
+      }
+
+      if (files.length > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleUploadFiles(files);
+        return;
+      }
+
+      // 2. Check for text in clipboard
+      const text = clipboardData.getData("text")?.trim();
+      if (text) {
+        // Image URL?
+        if (/^https?:\/\/.*\.(png|jpg|jpeg|webp|gif)(\?.*)?$/i.test(text)) {
+          event.preventDefault();
+          event.stopPropagation();
+          pushSnapshot();
+          addNode("image", getCenterFlowPosition(), { imageUrl: text, name: "Ảnh từ link dán" });
+          toast("Đã dán ảnh từ URL vào canvas (Ctrl+V)", "success");
+          return;
+        }
+        // Video URL?
+        if (/^https?:\/\/.*\.(mp4|webm|mov)(\?.*)?$/i.test(text)) {
+          event.preventDefault();
+          event.stopPropagation();
+          pushSnapshot();
+          addNode("image", getCenterFlowPosition(), { videoUrl: text, name: "Video từ link dán" });
+          toast("Đã dán video từ URL vào canvas (Ctrl+V)", "success");
+          return;
+        }
+        // Normal text (Prompt)
+        event.preventDefault();
+        event.stopPropagation();
+        pushSnapshot();
+        addNode("prompt", getCenterFlowPosition(), { text });
+        toast("Đã dán câu lệnh vào canvas (Ctrl+V)", "success");
+      }
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, [addNode, getCenterFlowPosition, handleUploadFiles, pushSnapshot, toast]);
 
   const runNodeById = useCallback(
     async (nodeId: string) => {
@@ -801,8 +1229,9 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
+            onNodesChange={handleNodesChange}
+            onEdgesChange={handleEdgesChange}
+            onNodeDragStart={onNodeDragStart}
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
@@ -885,7 +1314,33 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                   <Plus size={14} />
                   {tr("canvas.add")}
                 </button>
-                <button
+                <label
+                  title="Tải ảnh hoặc video từ máy tính (hoặc kéo thả / Ctrl+V)"
+                  className="flex cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium text-emerald-300 transition hover:bg-white/10"
+                >
+                  <Upload size={13} />
+                  Tải ảnh / video
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,video/*"
+                    hidden
+                    onChange={(event) => {
+                      const files = event.target.files ? Array.from(event.target.files) : [];
+                      if (files.length > 0) handleUploadFiles(files);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+                                <button
+                  type="button"
+                  onClick={loadFilmTemplate}
+                  className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] text-sky-200 hover:bg-white/10"
+                >
+                  <Clapperboard size={13} />
+                  Mẫu làm phim
+                </button>
+<button
                   type="button"
                   onClick={loadFashionTemplate}
                   className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] text-amber-200 hover:bg-white/10"
@@ -894,6 +1349,22 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                   Mẫu phối đồ
                 </button>
                 <span className="mx-0.5 h-4 w-px bg-white/10" />
+                <button
+                  type="button"
+                  onClick={undo}
+                  title="Hoàn tác (Ctrl+Z)"
+                  className="flex items-center gap-1 rounded-full px-2 py-1.5 text-[12px] text-ink-300 hover:bg-white/10 hover:text-white"
+                >
+                  <Undo2 size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={redo}
+                  title="Làm lại (Ctrl+Y)"
+                  className="flex items-center gap-1 rounded-full px-2 py-1.5 text-[12px] text-ink-300 hover:bg-white/10 hover:text-white"
+                >
+                  <Redo2 size={13} />
+                </button>
                 <button
                   type="button"
                   onClick={runSelected}

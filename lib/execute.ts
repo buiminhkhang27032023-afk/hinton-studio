@@ -22,10 +22,17 @@ export interface StudioNodeData {
   /** Text repeated in every prompt from this node — keeps a batch consistent. */
   continuity?: string;
   text?: string;
+  piapiMode?: string;
   result?: Asset | null;
   status?: "idle" | "running" | "done" | "error";
   error?: string | null;
   modelKind?: "image" | "video";
+  masterPromptEnabled?: boolean;
+  masterPromptUndo?: string;
+  masterPromptEnhanced?: boolean;
+  masterPromptEn?: string;
+  masterPromptVi?: string;
+  masterPromptHighlights?: string[];
 }
 
 export type StudioNode = Node<StudioNodeData>;
@@ -238,6 +245,41 @@ export async function runStudioNode(
     throw new Error("Khối này chỉ cung cấp dữ liệu, không cần chạy.");
   }
 
+  // Master Prompt Node
+  if (node.type === "prompt_master") {
+    const rawToEnhance =
+      (data.text as string)?.trim() || (data.prompt as string)?.trim() || inputs.prompt?.trim();
+    if (!rawToEnhance) throw new Error("Chưa nhập câu lệnh hoặc ý tưởng để trợ lý hoàn thiện.");
+    const res = await api.promptMaster.enhance({
+      prompt: rawToEnhance,
+      kind: (data.modelKind as "image" | "video") ?? "video",
+    });
+    data.text = res.enhancedPrompt;
+    data.prompt = res.enhancedPrompt;
+    data.masterPromptUndo = rawToEnhance;
+    data.masterPromptEnhanced = true;
+    data.masterPromptEn = res.enhancedPrompt;
+    data.masterPromptVi = res.enhancedPromptVi;
+    data.masterPromptHighlights = res.highlights;
+    return {
+      asset: {
+        id: `prompt-${Date.now()}`,
+        projectId,
+        name: "Prompt Bậc Thầy",
+        kind: "file",
+        mime: "text/plain",
+        url: "",
+        meta: {
+          text: res.enhancedPrompt,
+          enhancedPromptVi: res.enhancedPromptVi,
+          highlights: res.highlights,
+        },
+        createdAt: Date.now(),
+      },
+      text: res.enhancedPrompt,
+    };
+  }
+
   // Special Fashion Lookbook Split-Screen Composition Node
   if (node.type === "fashion_compose" || node.type === "split_video") {
     const video = inputs.videoUrl || inputs.image || (data.videoUrl as string);
@@ -336,10 +378,30 @@ export async function runStudioNode(
   const kind = node.type === "upscale" ? "upscale" : (data.modelKind ?? "image");
   if (!data.modelId) throw new Error("Chưa chọn model.");
 
-  const prompt = (data.prompt as string)?.trim() || inputs.prompt;
+  let prompt = (data.prompt as string)?.trim() || inputs.prompt;
   if (kind !== "upscale" && !prompt) throw new Error("Hãy nhập câu lệnh trước.");
   if (kind === "upscale" && !inputs.image && !data.imageUrl) {
     throw new Error("Hãy nối hoặc tải lên một ảnh để upscale.");
+  }
+
+  // If Master Prompt Assistant is enabled on this node, auto-enhance if not already enhanced
+  if (data.masterPromptEnabled && prompt && !data.masterPromptEnhanced) {
+    try {
+      const enhanced = await api.promptMaster.enhance({
+        prompt,
+        kind: kind === "video" ? "video" : "image",
+      });
+      if (enhanced.ok && enhanced.enhancedPrompt) {
+        prompt = enhanced.enhancedPrompt;
+        data.prompt = enhanced.enhancedPrompt;
+        data.masterPromptEnhanced = true;
+        data.masterPromptEn = enhanced.enhancedPrompt;
+        data.masterPromptVi = enhanced.enhancedPromptVi;
+        data.masterPromptHighlights = enhanced.highlights;
+      }
+    } catch (err) {
+      console.warn("Trợ lý Bậc Thầy auto-enhance thất bại, dùng prompt gốc:", err);
+    }
   }
 
   const sourceImage = inputs.image ?? (data.imageUrl as string | undefined) ?? "";

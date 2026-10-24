@@ -105,6 +105,7 @@ export const api = {
         language: string;
         iooai: { baseUrl: string; apiKey: string; hasKey: boolean };
         piapi: { baseUrl: string; apiKey: string; hasKey: boolean };
+        runninghub: { baseUrl: string; apiKey: string; hasKey: boolean };
       }>("/api/settings"),
     save: (payload: Record<string, unknown>) =>
       request<{ ok: true }>("/api/settings", { method: "PUT", body: JSON.stringify(payload) }),
@@ -170,5 +171,24 @@ export const api = {
       request<Array<{ id: string; summary: string; payload: Record<string, unknown>; createdAt: number }>>(
         `/api/analyze${projectId ? `?projectId=${projectId}` : ""}`,
       ),
+  },
+  promptMaster: {
+    enhance: (payload: {
+      prompt: string;
+      kind?: "image" | "video";
+      style?: string;
+      preferredLang?: "en" | "vi";
+    }) =>
+      request<{
+        ok: boolean;
+        originalPrompt: string;
+        enhancedPrompt: string;
+        enhancedPromptVi: string;
+        highlights: string[];
+        model: string;
+      }>("/api/prompt-master", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
   },
 };
