@@ -48,9 +48,9 @@ const PRESET_GATEWAYS: Array<Omit<GatewayConfig, "apiKey" | "hasKey" | "baseUrl"
     short: "DuomiAPI",
     icon: "💎",
     badge: "DUOMI",
-    defaultUrl: "https://duomiapi.com/v1",
-    docUrl: "https://duomiapi.com",
-    description: "Cổng tổng hợp API Trung Quốc chuyên Kling Video, Midjourney, Suno, Runway, Pika.",
+    defaultUrl: "https://api.wike.cc",
+    docUrl: "https://api.wike.cc",
+    description: "Cổng tổng hợp chuyên Seedance 2.0 (Doubao), Kling Video AI, Sora, Veo, Midjourney.",
   },
   {
     id: "iooai",

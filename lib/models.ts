@@ -7,6 +7,56 @@ import type { ModelConfig, ModelKind, ModelRecord } from "./types";
  */
 const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
   {
+    id: "duomiapi:seedance2_fast",
+    label: "DuomiAPI · ByteDance Seedance 2.0 Fast",
+    kind: "video",
+    provider: "duomiapi",
+    description: "Seedance 2.0 Fast của ByteDance qua DuomiAPI. Hỗ trợ nhận diện giữ mặt người, sinh video 5–10s mượt mà.",
+    config: {
+      endpoint: "/api/v3/contents/generations/tasks",
+      method: "POST",
+      body: {
+        model: "doubao-seedance-2-0-fast-260128",
+        content: [
+          { type: "text", text: "{{prompt}}" },
+          { type: "image_url", image_url: { url: "{{image}}" } },
+        ],
+      },
+      jobPath: "data.task_id",
+      pollEndpoint: "/api/v3/contents/generations/tasks/{{job}}",
+      statusPath: "data.status",
+      doneValues: ["succeeded", "completed", "success"],
+      failedValues: ["failed", "cancelled", "error"],
+      resultPath: "data.content.0.video_url",
+      timeout: 900,
+    },
+  },
+  {
+    id: "duomiapi:seedance2",
+    label: "DuomiAPI · ByteDance Seedance 2.0 Standard",
+    kind: "video",
+    provider: "duomiapi",
+    description: "Seedance 2.0 Standard chất lượng điện ảnh cao cấp nhất của ByteDance. Giữ khuôn mặt nhân vật cực chuẩn.",
+    config: {
+      endpoint: "/api/v3/contents/generations/tasks",
+      method: "POST",
+      body: {
+        model: "doubao-seedance-2-0-260128",
+        content: [
+          { type: "text", text: "{{prompt}}" },
+          { type: "image_url", image_url: { url: "{{image}}" } },
+        ],
+      },
+      jobPath: "data.task_id",
+      pollEndpoint: "/api/v3/contents/generations/tasks/{{job}}",
+      statusPath: "data.status",
+      doneValues: ["succeeded", "completed", "success"],
+      failedValues: ["failed", "cancelled", "error"],
+      resultPath: "data.content.0.video_url",
+      timeout: 900,
+    },
+  },
+  {
     id: "duomiapi:kling_video",
     label: "DuomiAPI · Kling Video AI",
     kind: "video",
@@ -407,7 +457,7 @@ const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
 ];
 
 /** Bump when a preset's shape changes so existing installs pick it up. */
-const PRESET_VERSION = 14;
+const PRESET_VERSION = 15;
 
 export function seedModels(): void {
   const db = getDb();

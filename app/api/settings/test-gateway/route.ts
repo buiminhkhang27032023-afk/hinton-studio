@@ -30,6 +30,59 @@ export async function POST(request: Request) {
     }
 
     const isPiapi = body.providerId === "piapi";
+    const isDuomi = body.providerId === "duomiapi" || baseUrl.includes("duomiapi") || baseUrl.includes("wike.cc");
+
+    // Special handling for DuomiAPI (Volcengine Doubao / Seedance / Kling format)
+    if (isDuomi) {
+      const cleanBase = baseUrl.replace(/\/v1\/?$/, "").replace(/\/+$/, "");
+      const hostsToTry = [
+        cleanBase,
+        "https://api.wike.cc",
+        "https://duomiapi.com",
+      ].filter((h, i, arr) => Boolean(h) && arr.indexOf(h) === i);
+
+      let lastError = "";
+      for (const host of hostsToTry) {
+        try {
+          const testEndpoint = `${host}/api/v3/contents/generations/tasks`;
+          const res = await fetch(testEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({}),
+            signal: AbortSignal.timeout(7000),
+          });
+
+          const text = await res.text();
+          let json: { code?: number; msg?: string } = {};
+          try { json = JSON.parse(text); } catch {}
+
+          if (json.code === 403 || (json.msg && json.msg.includes("KEY不正确"))) {
+            return NextResponse.json({
+              ok: false,
+              error: "DuomiAPI báo lỗi: Khóa bí mật API không đúng hoặc chưa được kích hoạt. Bạn vui lòng kiểm tra và copy lại đúng chuỗi khóa trong mục 'Khóa API' của DuomiAPI.",
+            });
+          }
+
+          // If server responded and did not reject the key (e.g. valid key, missing body fields)
+          return NextResponse.json({
+            ok: true,
+            status: 200,
+            message: `Kết nối DuomiAPI thành công qua [${host}]! Cổng sẵn sàng chạy Seedance 2.0, Kling, Veo...`,
+          });
+        } catch (err: unknown) {
+          lastError = err instanceof Error ? err.message : String(err);
+        }
+      }
+
+      return NextResponse.json({
+        ok: false,
+        error: `Không thể kết nối đến DuomiAPI qua mạng hiện tại (${lastError}). Vui lòng thử đổi Base URL sang https://api.wike.cc.`,
+      });
+    }
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...(isPiapi ? { "x-api-key": apiKey } : { Authorization: `Bearer ${apiKey}` }),

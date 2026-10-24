@@ -34,7 +34,7 @@ export const IOOAI_PROVIDER: ProviderSettings = {
 };
 
 export const DUOMIAPI_PROVIDER: ProviderSettings = {
-  baseUrl: "https://duomiapi.com/v1",
+  baseUrl: "https://api.wike.cc",
   apiKey: "",
   proxyAssets: true,
   authHeader: "bearer",
@@ -228,6 +228,14 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
     vars.resolution = vars.resolution === "1080p" ? "1080p" : "720p";
     if (vars.aspect !== "16:9" && vars.aspect !== "9:16") throw new Error("Omni IOOAI chỉ hỗ trợ 16:9 hoặc 9:16.");
   }
+  if (input.providerId === "duomiapi" && input.config.endpoint?.includes("contents/generations/tasks")) {
+    const prompt = String(vars.prompt || "").trim();
+    const image = typeof vars.image === "string" ? vars.image.trim() : "";
+    const content: Array<Record<string, unknown>> = [];
+    if (prompt) content.push({ type: "text", text: prompt });
+    if (image) content.push({ type: "image_url", image_url: { url: image } });
+    vars.content = content.length > 0 ? content : [{ type: "text", text: "cinematic high quality video" }];
+  }
   if (input.providerId === "piapi" && input.config.body?.task_type === "seedance-2-mini-less-restriction") {
     const images = Array.isArray(vars.imageUrls) ? vars.imageUrls : [];
     const allImages = Array.isArray(vars.images) ? vars.images : images;
@@ -346,7 +354,9 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
   }
 
   // Async job flow: poll until the status field says done / failed.
-  const jobId = input.config.jobPath ? pick(json, input.config.jobPath) : null;
+  const jobId = input.config.jobPath
+    ? (pick(json, input.config.jobPath) ?? pick(json, "data.task_id") ?? pick(json, "task_id") ?? pick(json, "id"))
+    : (pick(json, "id") ?? pick(json, "task_id") ?? pick(json, "data.task_id"));
   if (input.config.pollEndpoint && jobId != null) {
     const statusPath = input.config.statusPath ?? "status";
     const done = input.config.doneValues ?? ["succeeded", "completed", "success", "done"];
@@ -359,7 +369,8 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
       const pollMethod = input.config.pollMethod ?? (input.providerId === "runninghub" ? "POST" : "GET");
       const pollBody = pollMethod === "POST" ? { taskId: String(jobId) } : undefined;
       const pollJson = await send(input.config.pollEndpoint.replace("{{job}}", String(jobId)), 6, pollMethod, pollBody);
-      const status = String(pick(pollJson, statusPath) ?? "").toLowerCase();
+      const rawStatus = pick(pollJson, statusPath) ?? pick(pollJson, "data.status") ?? pick(pollJson, "status");
+      const status = String(rawStatus ?? "").toLowerCase();
       lastStatus = status;
 
       if (failed.includes(status)) {
@@ -372,7 +383,15 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
 
       if (done.includes(status)) {
         if (input.providerId === "iooai" && pick(pollJson, "download_ready") !== true) continue;
-        const finalValue = pick(pollJson, resultPath);
+        let finalValue = pick(pollJson, resultPath);
+        if (!finalValue || typeof finalValue !== "string") {
+          finalValue = pick(pollJson, "data.content.0.video_url")
+            ?? pick(pollJson, "data.video_url")
+            ?? pick(pollJson, "data.url")
+            ?? pick(pollJson, "video_url")
+            ?? pick(pollJson, "url")
+            ?? pick(pollJson, "output_url");
+        }
         if (typeof finalValue === "string" && finalValue) {
           return {
             source: finalValue,
