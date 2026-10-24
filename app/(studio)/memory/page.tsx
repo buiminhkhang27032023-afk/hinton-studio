@@ -2,26 +2,23 @@
 
 import React, { useEffect, useState, useMemo } from "react";
 import {
-  Activity,
+  RotateCcw,
+  Sparkles,
+  BarChart3,
+  TrendingUp,
+  PieChart as PieIcon,
+  ListOrdered,
   CheckCircle2,
   XCircle,
   Clock,
-  Layers,
-  Film,
-  Image as ImageIcon,
-  Sparkles,
-  RotateCcw,
-  TrendingUp,
-  Cpu,
-  BarChart3,
-  Waves,
+  Activity,
   ArrowUpRight,
-  ShieldAlert,
 } from "lucide-react";
 import clsx from "clsx";
 import { useUi } from "@/lib/ui-store";
 
 interface ModelStat {
+  rawModel: string;
   model: string;
   kind: string;
   total: number;
@@ -30,18 +27,13 @@ interface ModelStat {
   running: number;
   successRate: number;
   lastCalledAt: number;
+  color: string;
 }
 
-interface RecentJob {
-  id: string;
-  project_id: string | null;
-  node_id: string | null;
-  kind: string;
-  model: string;
-  status: string;
-  error: string | null;
-  created_at: number;
-  updated_at: number;
+interface HourlySlot {
+  slot: string;
+  total: number;
+  byModel: Record<string, number>;
 }
 
 interface AnalyticsData {
@@ -51,16 +43,18 @@ interface AnalyticsData {
   runningCalls: number;
   successRate: number;
   modelBreakdown: ModelStat[];
-  recentJobs: RecentJob[];
-  timeSlots: Array<{ hour_slot: string; total: number; succeeded: number; failed: number }>;
+  activeModels: string[];
+  modelColors: Record<string, string>;
+  hourlySeries: HourlySlot[];
 }
 
 export default function AnalyticsPage() {
   const { toast } = useUi();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedTimeRange, setSelectedTimeRange] = useState<"24h" | "7d" | "all">("all");
-  const [waveOffset, setWaveOffset] = useState(0);
+  const [activeTab, setActiveTab] = useState<"trend" | "distribution" | "ranking">("trend");
+  const [hoveredSlotIndex, setHoveredSlotIndex] = useState<number | null>(null);
+  const [hoveredBarIndex, setHoveredBarIndex] = useState<number | null>(null);
 
   const fetchAnalytics = async () => {
     setLoading(true);
@@ -83,394 +77,661 @@ export default function AnalyticsPage() {
     fetchAnalytics();
   }, []);
 
-  // Continuous subtle sine wave flow animation
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setWaveOffset((prev) => (prev + 0.05) % (Math.PI * 2));
-    }, 40);
-    return () => clearInterval(timer);
-  }, []);
+  // Top prioritized models for clean visual display matching IOOAI
+  const displayModels = useMemo(() => {
+    if (!data) return [];
+    const priority = ["omni 可编辑视频", "omni_flash_10s", "seedance2.0 线路二", "seedance2.5 LW"];
+    const all = data.activeModels || [];
+    const ordered: string[] = [];
 
-  // Generate SVG Sine Wave path based on actual metrics and dynamic oscillation
-  const sineWavePath = useMemo(() => {
-    const width = 800;
-    const height = 180;
-    const midY = height / 2;
-    const amplitude = 42;
-    const frequency = 0.022;
+    // Add prioritized first if present
+    priority.forEach((p) => {
+      if (all.includes(p)) ordered.push(p);
+    });
+    // Add remaining
+    all.forEach((m) => {
+      if (!ordered.includes(m)) ordered.push(m);
+    });
 
-    const points: Array<[number, number]> = [];
-    const totalSteps = 80;
+    return ordered.slice(0, 6);
+  }, [data]);
 
-    for (let i = 0; i <= totalSteps; i++) {
-      const x = (i / totalSteps) * width;
-      // Combine two sine waves for organic luxury undulating rhythm
-      const wave1 = Math.sin(x * frequency + waveOffset) * amplitude;
-      const wave2 = Math.cos(x * frequency * 0.5 + waveOffset * 0.8) * (amplitude * 0.35);
-      const y = midY + wave1 + wave2;
-      points.push([x, y]);
-    }
+  const hourlySeries = data?.hourlySeries || [];
+  const activeModels = displayModels;
+  const modelColors: Record<string, string> = data?.modelColors || {};
 
-    const pathD = points.reduce((acc, [x, y], idx) => {
-      return idx === 0 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : `${acc} L ${x.toFixed(1)} ${y.toFixed(1)}`;
-    }, "");
+  // Compute maximums for chart scales
+  const maxBarTotal = useMemo(() => {
+    if (hourlySeries.length === 0) return 4;
+    const maxVal = Math.max(...hourlySeries.map((s) => s.total));
+    return Math.max(4, Math.ceil(maxVal * 1.15));
+  }, [hourlySeries]);
 
-    const areaD = `${pathD} L ${width} ${height} L 0 ${height} Z`;
+  const maxTrendVal = useMemo(() => {
+    let m = 3;
+    hourlySeries.forEach((s) => {
+      Object.values(s.byModel).forEach((v) => {
+        if (v > m) m = v;
+      });
+    });
+    return Math.max(3, Math.ceil(m));
+  }, [hourlySeries]);
 
-    return { pathD, areaD, points };
-  }, [waveOffset]);
+  // Compute smooth cubic bezier spline path for each model in "Xu hướng cuộc gọi" (Sơ đồ hình sin)
+  const splinePaths = useMemo(() => {
+    if (hourlySeries.length < 2) return {};
+
+    const svgWidth = 860;
+    const svgHeight = 220;
+    const paddingLeft = 40;
+    const paddingRight = 40;
+    const paddingTop = 20;
+    const paddingBottom = 40;
+
+    const plotW = svgWidth - paddingLeft - paddingRight;
+    const plotH = svgHeight - paddingTop - paddingBottom;
+    const stepX = plotW / (hourlySeries.length - 1);
+
+    const paths: Record<string, { pathD: string; areaD: string; points: Array<{ x: number; y: number; val: number }> }> = {};
+
+    activeModels.forEach((modelName) => {
+      const pts = hourlySeries.map((slot, idx) => {
+        const val = slot.byModel[modelName] || 0;
+        const x = paddingLeft + idx * stepX;
+        const y = paddingTop + plotH - (val / maxTrendVal) * plotH;
+        return { x, y, val };
+      });
+
+      if (pts.length === 0) return;
+
+      // Build smooth cubic bezier curve through points
+      let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[i === 0 ? 0 : i - 1];
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1];
+
+        // Cardinal / Catmull-Rom to Cubic Bezier
+        const cp1x = p1.x + (p2.x - p0.x) / 6;
+        const cp1y = p1.y + (p2.y - p0.y) / 6;
+        const cp2x = p2.x - (p3.x - p1.x) / 6;
+        const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+        d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+      }
+
+      const lastPt = pts[pts.length - 1];
+      const firstPt = pts[0];
+      const bottomY = paddingTop + plotH;
+      const area = `${d} L ${lastPt.x.toFixed(1)} ${bottomY} L ${firstPt.x.toFixed(1)} ${bottomY} Z`;
+
+      paths[modelName] = { pathD: d, areaD: area, points: pts };
+    });
+
+    return paths;
+  }, [hourlySeries, activeModels, maxTrendVal]);
+
+  // Donut chart calculations
+  const donutSlices = useMemo(() => {
+    const total = data?.totalCalls || 0;
+    if (total === 0 || !data?.modelBreakdown) return [];
+
+    let currentAngle = 0;
+    return data.modelBreakdown.slice(0, 7).map((item) => {
+      const percent = (item.total / total) * 100;
+      const angle = (item.total / total) * 360;
+      const startAngle = currentAngle;
+      const endAngle = currentAngle + angle;
+      currentAngle += angle;
+
+      const r = 70;
+      const cx = 100;
+      const cy = 100;
+
+      const x1 = cx + r * Math.cos((Math.PI * (startAngle - 90)) / 180);
+      const y1 = cy + r * Math.sin((Math.PI * (startAngle - 90)) / 180);
+      const x2 = cx + r * Math.cos((Math.PI * (endAngle - 90)) / 180);
+      const y2 = cy + r * Math.sin((Math.PI * (endAngle - 90)) / 180);
+
+      const largeArc = angle > 180 ? 1 : 0;
+      const pathD = `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`;
+
+      return {
+        ...item,
+        percent: percent.toFixed(1),
+        pathD,
+      };
+    });
+  }, [data]);
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-[#0d0d12] text-neutral-200">
-      {/* Page Header */}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 px-8 py-6 bg-white/[0.02]">
-        <div className="flex items-center gap-3.5">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500/20 via-sky-500/20 to-violet-500/20 border border-white/15 text-amber-300 shadow-inner">
-            <Waves size={22} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-[22px] font-bold tracking-tight text-white">Thống Kê Cuộc Gọi AI & Sơ Đồ Hình Sin</h1>
-              <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10.5px] font-medium text-amber-300 border border-amber-500/30">
-                Live Telemetry
-              </span>
-            </div>
-            <p className="mt-0.5 text-[12.5px] text-neutral-400">
-              Tổng hợp số lượt gọi theo từng Model, tỷ lệ thành công / thất bại và sơ đồ sóng hoạt động
-            </p>
-          </div>
+    <div className="flex h-full flex-col overflow-y-auto bg-[#0e0f15] text-neutral-200">
+      {/* Top Bar Header */}
+      <div className="flex items-center justify-between border-b border-white/[0.08] px-8 py-5 bg-[#12131b]/60 backdrop-blur">
+        <div>
+          <h1 className="text-[17px] font-semibold text-white tracking-tight">
+            Phân tích lượt gọi mô hình
+          </h1>
+          <p className="mt-0.5 text-[12px] text-neutral-400">
+            Giám sát thời gian thực số lượt gọi API, tỷ lệ thành công và biểu đồ xu hướng theo từng Model
+          </p>
         </div>
 
         <button
           type="button"
           onClick={fetchAnalytics}
           disabled={loading}
-          className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3.5 py-2 text-[12px] font-medium text-neutral-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-[12px] font-medium text-neutral-300 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
         >
           <RotateCcw size={13} className={loading ? "animate-spin" : ""} />
-          Làm mới số liệu
+          <span>Làm mới số liệu</span>
         </button>
-      </header>
+      </div>
 
       <div className="mx-auto w-full max-w-6xl space-y-6 px-8 py-6">
-        {/* 4 Top KPI Cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Total Calls */}
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 shadow-sm backdrop-blur transition hover:border-white/20">
-            <div className="flex items-center justify-between text-neutral-400 text-[12px] font-medium">
-              <span>Tổng số lượt gọi</span>
-              <span className="rounded-lg bg-sky-500/15 p-1.5 text-sky-400">
-                <BarChart3 size={15} />
-              </span>
-            </div>
-            <div className="mt-2.5 flex items-baseline gap-2">
-              <span className="text-[28px] font-extrabold tracking-tight text-white">
-                {data?.totalCalls ?? 0}
-              </span>
-              <span className="text-[12px] text-neutral-400">cuộc gọi API</span>
-            </div>
-            <div className="mt-2 text-[11px] text-neutral-500 flex items-center gap-1">
-              <Sparkles size={11} className="text-amber-400" />
-              Ghi nhận qua studio.db
+        {/* ============================================================== */}
+        {/* CHART 1: BIỂU ĐỒ CỘT XẾP CHỒNG (STACKED BAR CHART THEO GIỜ) */}
+        {/* ============================================================== */}
+        <div className="relative rounded-2xl border border-white/[0.08] bg-[#141620] p-6 shadow-xl">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[15px] font-semibold text-white">Phân tích lượt gọi mô hình</h2>
+            <div className="text-[11px] text-neutral-400">
+              Đơn vị: Cuộc gọi / Giờ
             </div>
           </div>
 
-          {/* Succeeded */}
-          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-950/10 p-4 shadow-sm backdrop-blur transition hover:border-emerald-500/40">
-            <div className="flex items-center justify-between text-emerald-400 text-[12px] font-medium">
-              <span>Gọi thành công</span>
-              <span className="rounded-lg bg-emerald-500/20 p-1.5 text-emerald-400">
-                <CheckCircle2 size={15} />
-              </span>
-            </div>
-            <div className="mt-2.5 flex items-baseline gap-2">
-              <span className="text-[28px] font-extrabold tracking-tight text-emerald-300">
-                {data?.successCalls ?? 0}
-              </span>
-              <span className="rounded-md bg-emerald-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-300">
-                {data?.successRate ?? 0}%
-              </span>
-            </div>
-            <div className="mt-2 text-[11px] text-emerald-400/70">
-              Xuất video / ảnh hoàn tất
-            </div>
+          {/* SVG Stacked Bar Chart */}
+          <div className="relative h-[220px] w-full">
+            <svg viewBox="0 0 860 200" preserveAspectRatio="none" className="h-full w-full">
+              {/* Y Axis Grid lines and labels */}
+              {[0, 1, 2, 3, 4].map((step) => {
+                const y = 170 - (step / 4) * 150;
+                return (
+                  <g key={step}>
+                    <line
+                      x1="45"
+                      y1={y}
+                      x2="850"
+                      y2={y}
+                      stroke="rgba(255,255,255,0.06)"
+                      strokeDasharray={step === 0 ? "none" : "2,4"}
+                    />
+                    <text
+                      x="35"
+                      y={y + 3.5}
+                      textAnchor="end"
+                      fill="#73768a"
+                      fontSize="10"
+                      fontFamily="sans-serif"
+                    >
+                      {step}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* Stacked Bars per Hour Slot */}
+              {hourlySeries.map((slot, idx) => {
+                const totalSlots = hourlySeries.length;
+                const slotWidth = 780 / totalSlots;
+                const barWidth = 38;
+                const xCenter = 55 + idx * slotWidth + slotWidth / 2;
+                const x = xCenter - barWidth / 2;
+
+                let currentY = 170;
+
+                return (
+                  <g
+                    key={slot.slot}
+                    className="cursor-pointer transition-opacity"
+                    onMouseEnter={() => setHoveredBarIndex(idx)}
+                    onMouseLeave={() => setHoveredBarIndex(null)}
+                  >
+                    {/* Background hover column */}
+                    {hoveredBarIndex === idx && (
+                      <rect
+                        x={xCenter - slotWidth / 2}
+                        y={20}
+                        width={slotWidth}
+                        height={150}
+                        fill="rgba(255,255,255,0.03)"
+                        rx={4}
+                      />
+                    )}
+
+                    {/* Stacked segments for each model */}
+                    {activeModels.map((mName) => {
+                      const count = slot.byModel[mName] || 0;
+                      if (count <= 0) return null;
+                      const segmentHeight = (count / maxBarTotal) * 150;
+                      currentY -= segmentHeight;
+                      const segColor = modelColors[mName] || "#38bdf8";
+
+                      return (
+                        <rect
+                          key={mName}
+                          x={x}
+                          y={currentY}
+                          width={barWidth}
+                          height={Math.max(2, segmentHeight)}
+                          fill={segColor}
+                          rx={1.5}
+                          className="transition-all hover:brightness-125"
+                        />
+                      );
+                    })}
+
+                    {/* X-axis slot label */}
+                    <text
+                      x={xCenter}
+                      y={188}
+                      textAnchor="middle"
+                      fill="#73768a"
+                      fontSize="10"
+                      fontFamily="sans-serif"
+                    >
+                      {slot.slot}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+
+            {/* Hover Tooltip for Bar Chart */}
+            {hoveredBarIndex !== null && hourlySeries[hoveredBarIndex] && (
+              <div
+                className="pointer-events-none absolute top-4 z-20 rounded-xl border border-white/10 bg-[#1e202c]/95 p-3 text-[11.5px] shadow-2xl backdrop-blur-md transition-all"
+                style={{
+                  left: `${Math.min(75, Math.max(15, (hoveredBarIndex / hourlySeries.length) * 100))}%`,
+                }}
+              >
+                <div className="font-semibold text-white border-b border-white/10 pb-1.5 mb-2">
+                  {hourlySeries[hoveredBarIndex].slot}
+                </div>
+                <div className="text-neutral-400 mb-1 flex justify-between gap-4">
+                  <span>Tổng cộng:</span>
+                  <span className="font-bold text-white">{hourlySeries[hoveredBarIndex].total}</span>
+                </div>
+                <div className="space-y-1">
+                  {activeModels.map((m) => {
+                    const c = hourlySeries[hoveredBarIndex].byModel[m] || 0;
+                    return (
+                      <div key={m} className="flex items-center justify-between gap-4 text-neutral-300">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="inline-block h-2 w-2 rounded-sm"
+                            style={{ backgroundColor: modelColors[m] || "#38bdf8" }}
+                          />
+                          <span className="truncate max-w-[150px]">{m}</span>
+                        </div>
+                        <span className="font-medium text-white">{c}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Failed */}
-          <div className="rounded-2xl border border-red-500/20 bg-red-950/10 p-4 shadow-sm backdrop-blur transition hover:border-red-500/40">
-            <div className="flex items-center justify-between text-red-400 text-[12px] font-medium">
-              <span>Cuộc gọi thất bại</span>
-              <span className="rounded-lg bg-red-500/20 p-1.5 text-red-400">
-                <XCircle size={15} />
-              </span>
-            </div>
-            <div className="mt-2.5 flex items-baseline gap-2">
-              <span className="text-[28px] font-extrabold tracking-tight text-red-400">
-                {data?.failedCalls ?? 0}
-              </span>
-              <span className="text-[12px] text-neutral-400">
-                ({data?.totalCalls ? Math.round(((data.failedCalls ?? 0) / data.totalCalls) * 100) : 0}%)
-              </span>
-            </div>
-            <div className="mt-2 text-[11px] text-red-400/70">
-              Do hết credits hoặc lỗi mạng
-            </div>
-          </div>
-
-          {/* Active / Running */}
-          <div className="rounded-2xl border border-sky-500/20 bg-sky-950/10 p-4 shadow-sm backdrop-blur transition hover:border-sky-500/40">
-            <div className="flex items-center justify-between text-sky-400 text-[12px] font-medium">
-              <span>Đang xử lý / Chờ</span>
-              <span className="rounded-lg bg-sky-500/20 p-1.5 text-sky-400">
-                <Clock size={15} />
-              </span>
-            </div>
-            <div className="mt-2.5 flex items-baseline gap-2">
-              <span className="text-[28px] font-extrabold tracking-tight text-sky-300">
-                {data?.runningCalls ?? 0}
-              </span>
-              <span className="text-[12px] text-neutral-400">tác vụ</span>
-            </div>
-            <div className="mt-2 text-[11px] text-sky-400/70">
-              Đang render trong hàng đợi
-            </div>
+          {/* Model Legends Below Bar Chart */}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-5 pt-3 border-t border-white/[0.05] text-[11.5px] text-neutral-400">
+            {activeModels.map((m) => (
+              <div key={m} className="flex items-center gap-2">
+                <span
+                  className="h-2.5 w-2.5 rounded-sm"
+                  style={{ backgroundColor: modelColors[m] || "#38bdf8" }}
+                />
+                <span className="text-neutral-300">{m}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* SƠ ĐỒ HÌNH SIN (SINE WAVE ACTIVITY TELEMETRY) */}
-        <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.04] to-black/30 p-5 shadow-lg">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-300">
-                <Waves size={15} />
-              </span>
-              <div>
-                <h2 className="text-[14.5px] font-semibold text-white">Sơ Đồ Hình Sin: Nhịp Điệu Cuộc Gọi AI</h2>
-                <p className="text-[11px] text-neutral-400">
-                  Biểu diễn sóng tần suất và biên độ hoạt động của các model AI theo thời gian
-                </p>
+        {/* ============================================================== */}
+        {/* CHART 2: CARD PHÂN TÍCH LƯỢT GỌI & TAB SWITCHER (XU HƯỚNG/SƠ ĐỒ HÌNH SIN) */}
+        {/* ============================================================== */}
+        <div className="rounded-2xl border border-white/[0.08] bg-[#141620] p-6 shadow-xl">
+          {/* Card Header with Glowing Icon & Tabs */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.08] pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-pink-500/20 via-purple-500/20 to-sky-500/20 border border-white/10 text-pink-400">
+                <Activity size={18} />
+              </div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-[15px] font-semibold text-white">Phân tích lượt gọi mô hình</h3>
+                <span className="text-neutral-500">|</span>
+                <span className="text-[12.5px] text-neutral-400">
+                  Tổng cộng: <strong className="text-white font-semibold">{data?.totalCalls || 0}</strong>
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 p-1 text-[11px]">
-              {(["24h", "7d", "all"] as const).map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setSelectedTimeRange(r)}
-                  className={clsx(
-                    "rounded-lg px-2.5 py-1 font-medium transition",
-                    selectedTimeRange === r ? "bg-amber-500 text-black shadow" : "text-neutral-400 hover:text-white",
-                  )}
-                >
-                  {r === "24h" ? "24 Giờ" : r === "7d" ? "7 Ngày" : "Toàn bộ"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Interactive SVG Sine Wave Canvas */}
-          <div className="relative mt-4 h-[200px] w-full overflow-hidden rounded-xl border border-white/10 bg-[#09090e]/90">
-            {/* Grid overlay */}
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:40px_30px]" />
-
-            <svg
-              viewBox="0 0 800 180"
-              preserveAspectRatio="none"
-              className="relative h-full w-full overflow-visible"
-            >
-              <defs>
-                {/* Sine wave glow gradient fill */}
-                <linearGradient id="sineGlow" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.35" />
-                  <stop offset="60%" stopColor="#eab308" stopOpacity="0.1" />
-                  <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-                </linearGradient>
-
-                {/* Sine stroke gradient */}
-                <linearGradient id="sineStroke" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#38bdf8" />
-                  <stop offset="50%" stopColor="#facc15" />
-                  <stop offset="100%" stopColor="#a855f7" />
-                </linearGradient>
-              </defs>
-
-              {/* Area under wave */}
-              <path d={sineWavePath.areaD} fill="url(#sineGlow)" />
-
-              {/* Center Zero Axis Line */}
-              <line x1="0" y1="90" x2="800" y2="90" stroke="#ffffff15" strokeDasharray="4 4" strokeWidth="1" />
-
-              {/* Harmonic wave overlay */}
-              <path
-                d={sineWavePath.pathD}
-                fill="none"
-                stroke="url(#sineStroke)"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-
-              {/* Peak Wave Highlight Nodes */}
-              {sineWavePath.points
-                .filter((_, idx) => idx % 10 === 0)
-                .map(([x, y], pIdx) => (
-                  <g key={pIdx}>
-                    <circle cx={x} cy={y} r="5" fill="#facc15" stroke="#18181b" strokeWidth="2" />
-                    <circle cx={x} cy={y} r="9" fill="none" stroke="#facc15" strokeWidth="1" opacity="0.4" />
-                  </g>
-                ))}
-            </svg>
-
-            {/* Float badges on wave */}
-            <div className="pointer-events-none absolute bottom-3 left-4 flex items-center gap-4 text-[10.5px] text-neutral-400">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-sky-400" /> Nhịp sóng API (Traffic Waves)
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-amber-400" /> Tần số cao điểm (Peak Cycles)
-              </span>
-            </div>
-            <div className="pointer-events-none absolute top-3 right-4 rounded-lg bg-black/60 px-2 py-1 text-[10.5px] font-mono text-amber-300 border border-white/10">
-              f(t) = A·sin(ωt + φ) · 125 Calls
-            </div>
-          </div>
-        </div>
-
-        {/* BẢNG THỐNG KÊ CHI TIẾT TỪNG MODEL */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-lg">
-          <div className="flex items-center justify-between border-b border-white/10 pb-4">
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/20 text-violet-400">
-                <Cpu size={15} />
-              </span>
-              <h2 className="text-[14.5px] font-semibold text-white">
-                Bảng Thống Kê Chi Tiết Số Lần Gọi Theo Model
-              </h2>
-            </div>
-            <span className="text-[12px] text-neutral-400">
-              {data?.modelBreakdown?.length ?? 0} model đã sử dụng
-            </span>
-          </div>
-
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-[12.5px]">
-              <thead>
-                <tr className="border-b border-white/10 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-                  <th className="pb-3 pl-3">Tên Model</th>
-                  <th className="pb-3">Phân Loại</th>
-                  <th className="pb-3 text-center">Tổng Số Lần</th>
-                  <th className="pb-3">Thành Công / Thất Bại</th>
-                  <th className="pb-3 text-right">Tỷ Lệ (%)</th>
-                  <th className="pb-3 pr-3 text-right">Lần Gọi Gần Nhất</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {data?.modelBreakdown?.map((m) => {
-                  const isVideo = m.kind === "video" || m.model.includes("video") || m.model.includes("seedance") || m.model.includes("veo") || m.model.includes("omni");
-                  const isImage = m.kind === "image" || m.model.includes("image") || m.model.includes("gpt-image");
-
-                  return (
-                    <tr key={m.model} className="transition hover:bg-white/[0.02]">
-                      <td className="py-3 pl-3 font-medium text-white">
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white/5 text-neutral-300">
-                            {isVideo ? <Film size={12} className="text-sky-400" /> : isImage ? <ImageIcon size={12} className="text-amber-400" /> : <Sparkles size={12} className="text-violet-400" />}
-                          </span>
-                          <span className="font-mono text-[12px]">{m.model}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 text-neutral-400">
-                        <span className="rounded bg-white/5 px-2 py-0.5 text-[10.5px]">
-                          {isVideo ? "Video AI" : isImage ? "Ảnh AI" : "Chat / Prompt"}
-                        </span>
-                      </td>
-                      <td className="py-3 text-center font-bold text-white">
-                        {m.total}
-                      </td>
-                      <td className="py-3 min-w-[140px]">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-emerald-400 font-medium">{m.succeeded} ✓</span>
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-800 flex">
-                            <div
-                              style={{ width: `${m.successRate}%` }}
-                              className="h-full bg-emerald-400"
-                            />
-                            <div
-                              style={{ width: `${100 - m.successRate}%` }}
-                              className="h-full bg-red-400"
-                            />
-                          </div>
-                          <span className="text-[11px] text-red-400 font-medium">{m.failed} ✗</span>
-                        </div>
-                      </td>
-                      <td className="py-3 text-right font-semibold">
-                        <span className={clsx(m.successRate >= 60 ? "text-emerald-400" : "text-amber-400")}>
-                          {m.successRate}%
-                        </span>
-                      </td>
-                      <td className="py-3 pr-3 text-right text-[11px] text-neutral-400">
-                        {m.lastCalledAt ? new Date(m.lastCalledAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {(!data?.modelBreakdown || data.modelBreakdown.length === 0) && (
-                  <tr>
-                    <td colSpan={6} className="py-6 text-center text-neutral-500">
-                      Chưa có dữ liệu gọi model nào. Hãy chạy thử một tác vụ trên Canvas!
-                    </td>
-                  </tr>
+            {/* 3 Tabs: Xu hướng cuộc gọi | Phân bổ số lượt gọi | Xếp hạng số lượt gọi */}
+            <div className="flex items-center rounded-xl border border-white/[0.08] bg-[#0c0d13] p-1 text-[12px]">
+              <button
+                type="button"
+                onClick={() => setActiveTab("trend")}
+                className={clsx(
+                  "rounded-lg px-3.5 py-1.5 font-medium transition",
+                  activeTab === "trend"
+                    ? "bg-[#272a3a] text-white shadow"
+                    : "text-neutral-400 hover:text-white",
                 )}
-              </tbody>
-            </table>
+              >
+                Xu hướng cuộc gọi
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("distribution")}
+                className={clsx(
+                  "rounded-lg px-3.5 py-1.5 font-medium transition",
+                  activeTab === "distribution"
+                    ? "bg-[#272a3a] text-white shadow"
+                    : "text-neutral-400 hover:text-white",
+                )}
+              >
+                Phân bổ số lượt gọi
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("ranking")}
+                className={clsx(
+                  "rounded-lg px-3.5 py-1.5 font-medium transition",
+                  activeTab === "ranking"
+                    ? "bg-[#272a3a] text-white shadow"
+                    : "text-neutral-400 hover:text-white",
+                )}
+              >
+                Xếp hạng số lượt gọi
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* NHẬT KÝ GỌI GẦN NHẤT (RECENT JOBS) */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-lg">
-          <div className="flex items-center justify-between border-b border-white/10 pb-4">
-            <h2 className="text-[14.5px] font-semibold text-white">Nhật Ký Tác Vụ Gần Đây</h2>
-            <span className="text-[11px] text-neutral-500">20 lần gọi mới nhất</span>
-          </div>
+          {/* TAB 1: XU HƯỚNG CUỘC GỌI (SMOOTH SPLINE / SƠ ĐỒ HÌNH SIN) */}
+          {activeTab === "trend" && (
+            <div className="mt-5">
+              <div className="mb-2 text-[13.5px] font-medium text-neutral-300">
+                Xu hướng cuộc gọi
+              </div>
 
-          <div className="mt-3 space-y-2 max-h-[300px] overflow-y-auto">
-            {data?.recentJobs?.map((job) => {
-              const ok = job.status === "succeeded" || job.status === "done";
-              const fail = job.status === "failed" || job.status === "error";
+              {/* Smooth Bezier Spline Curves Canvas */}
+              <div
+                className="relative h-[250px] w-full cursor-crosshair select-none"
+                onMouseMove={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = e.clientX - rect.left - 40;
+                  const w = rect.width - 80;
+                  if (w > 0 && hourlySeries.length > 1) {
+                    const idx = Math.round((x / w) * (hourlySeries.length - 1));
+                    setHoveredSlotIndex(Math.max(0, Math.min(hourlySeries.length - 1, idx)));
+                  }
+                }}
+                onMouseLeave={() => setHoveredSlotIndex(null)}
+              >
+                <svg viewBox="0 0 860 220" preserveAspectRatio="none" className="h-full w-full">
+                  {/* Y-axis horizontal grid lines (0, 0.5, 1, 1.5, 2, 2.5, 3) */}
+                  {[0, 0.5, 1, 1.5, 2, 2.5, 3].map((val) => {
+                    const y = 180 - (val / 3) * 160;
+                    return (
+                      <g key={val}>
+                        <line
+                          x1="40"
+                          y1={y}
+                          x2="820"
+                          y2={y}
+                          stroke="rgba(255,255,255,0.05)"
+                          strokeDasharray={val === 0 ? "none" : "3,3"}
+                        />
+                        <text
+                          x="32"
+                          y={y + 3.5}
+                          textAnchor="end"
+                          fill="#73768a"
+                          fontSize="9.5"
+                          fontFamily="sans-serif"
+                        >
+                          {val}
+                        </text>
+                      </g>
+                    );
+                  })}
 
-              return (
-                <div
-                  key={job.id}
-                  className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 p-2.5 text-[12px]"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span
-                      className={clsx(
-                        "flex h-6 w-6 items-center justify-center rounded-lg text-xs",
-                        ok ? "bg-emerald-500/20 text-emerald-400" : fail ? "bg-red-500/20 text-red-400" : "bg-sky-500/20 text-sky-400",
-                      )}
-                    >
-                      {ok ? "✓" : fail ? "✗" : "⏳"}
-                    </span>
-                    <div className="min-w-0 truncate">
-                      <span className="font-mono text-white text-[12px]">{job.model}</span>
-                      {job.error && (
-                        <p className="truncate text-[10.5px] text-red-400">{job.error}</p>
-                      )}
+                  {/* Vertical highlight band when hovered (Exactly as shown at 10-25 00:00 in screenshot) */}
+                  {hoveredSlotIndex !== null && (
+                    <g>
+                      {(() => {
+                        const stepX = (860 - 80) / (hourlySeries.length - 1);
+                        const bandX = 40 + hoveredSlotIndex * stepX - stepX / 2;
+                        return (
+                          <rect
+                            x={Math.max(40, bandX)}
+                            y={20}
+                            width={stepX}
+                            height={160}
+                            fill="rgba(255, 255, 255, 0.05)"
+                          />
+                        );
+                      })()}
+                    </g>
+                  )}
+
+                  {/* Render smooth spline curve for each active model */}
+                  {activeModels.map((mName) => {
+                    const modelSpline = splinePaths[mName];
+                    if (!modelSpline) return null;
+                    const strokeColor = modelColors[mName] || "#38bdf8";
+
+                    return (
+                      <g key={mName}>
+                        {/* Smooth Line */}
+                        <path
+                          d={modelSpline.pathD}
+                          fill="none"
+                          stroke={strokeColor}
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        {/* Dot on hovered point */}
+                        {hoveredSlotIndex !== null && modelSpline.points[hoveredSlotIndex] && (
+                          <circle
+                            cx={modelSpline.points[hoveredSlotIndex].x}
+                            cy={modelSpline.points[hoveredSlotIndex].y}
+                            r="4.5"
+                            fill={strokeColor}
+                            stroke="#141620"
+                            strokeWidth="2"
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+
+                  {/* X Axis labels */}
+                  {hourlySeries.map((slot, idx) => {
+                    const stepX = (860 - 80) / (hourlySeries.length - 1);
+                    const x = 40 + idx * stepX;
+                    return (
+                      <text
+                        key={slot.slot}
+                        x={x}
+                        y={205}
+                        textAnchor="middle"
+                        fill="#73768a"
+                        fontSize="10"
+                        fontFamily="sans-serif"
+                      >
+                        {slot.slot}
+                      </text>
+                    );
+                  })}
+                </svg>
+
+                {/* Floating Tooltip Box matching IOOAI screenshot */}
+                {hoveredSlotIndex !== null && hourlySeries[hoveredSlotIndex] && (
+                  <div
+                    className="pointer-events-none absolute z-30 rounded-xl border border-white/10 bg-[#252836]/95 px-3.5 py-3 text-[11px] shadow-2xl backdrop-blur-md"
+                    style={{
+                      right: "30px",
+                      bottom: "40px",
+                      minWidth: "180px",
+                    }}
+                  >
+                    <div className="font-semibold text-white mb-1.5">
+                      {hourlySeries[hoveredSlotIndex].slot}
+                    </div>
+                    <div className="flex justify-between items-center text-neutral-300 mb-2 border-b border-white/10 pb-1.5">
+                      <span>Tổng cộng:</span>
+                      <span className="font-bold text-white">
+                        {hourlySeries[hoveredSlotIndex].total}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      {activeModels.map((m) => {
+                        const cnt = hourlySeries[hoveredSlotIndex].byModel[m] || 0;
+                        return (
+                          <div key={m} className="flex items-center justify-between gap-3 text-neutral-300">
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className="inline-block h-2 w-2 rounded-sm"
+                                style={{ backgroundColor: modelColors[m] || "#38bdf8" }}
+                              />
+                              <span className="truncate max-w-[130px]">{m}</span>
+                            </div>
+                            <span className="font-semibold text-white">{cnt}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
+                )}
+              </div>
 
-                  <div className="flex items-center gap-3 shrink-0 text-neutral-400 text-[11px]">
-                    <span className="rounded bg-white/5 px-2 py-0.5 text-[10.5px]">
-                      {job.kind}
+              {/* Legends below Line Chart */}
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-5 pt-3 border-t border-white/[0.05] text-[11.5px] text-neutral-400">
+                {activeModels.map((m) => (
+                  <div key={m} className="flex items-center gap-2">
+                    <span
+                      className="h-2 w-2 rounded-sm"
+                      style={{ backgroundColor: modelColors[m] || "#38bdf8" }}
+                    />
+                    <span className="text-neutral-300">{m}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: PHÂN BỔ SỐ LƯỢT GỌI (DONUT CHART) */}
+          {activeTab === "distribution" && (
+            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+              <div className="flex justify-center">
+                <div className="relative h-[210px] w-[210px]">
+                  <svg viewBox="0 0 200 200" className="h-full w-full">
+                    {donutSlices.map((slice) => (
+                      <path
+                        key={slice.model}
+                        d={slice.pathD}
+                        fill={modelColors[slice.model] || "#38bdf8"}
+                        className="transition-opacity hover:opacity-85"
+                      />
+                    ))}
+                    {/* Inner hole for donut */}
+                    <circle cx="100" cy="100" r="46" fill="#141620" />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+                    <span className="text-[20px] font-bold text-white tracking-tight">
+                      {data?.totalCalls || 0}
                     </span>
-                    <span>{new Date(job.created_at).toLocaleTimeString("vi-VN")}</span>
+                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider">
+                      Cuộc gọi
+                    </span>
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+
+              {/* Breakdown Legend with Percentages */}
+              <div className="space-y-2.5">
+                <div className="text-[12.5px] font-medium text-neutral-300 mb-2">
+                  Tỷ lệ đóng góp theo Model
+                </div>
+                {donutSlices.map((s) => (
+                  <div
+                    key={s.model}
+                    className="flex items-center justify-between rounded-xl border border-white/[0.04] bg-white/[0.02] p-2.5 text-[12px] transition hover:bg-white/[0.05]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 rounded-sm"
+                        style={{ backgroundColor: modelColors[s.model] || "#38bdf8" }}
+                      />
+                      <span className="text-white font-medium">{s.model}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-neutral-400">{s.total} lượt</span>
+                      <span className="font-semibold text-amber-300">{s.percent}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: XẾP HẠNG SỐ LƯỢT GỌI (LEADERBOARD TABLE) */}
+          {activeTab === "ranking" && (
+            <div className="mt-5 overflow-hidden rounded-xl border border-white/[0.08]">
+              <table className="w-full text-left text-[12.5px]">
+                <thead className="border-b border-white/[0.08] bg-[#0d0e14] text-[11px] uppercase tracking-wider text-neutral-400">
+                  <tr>
+                    <th className="px-4 py-3">Hạng</th>
+                    <th className="px-4 py-3">Tên Model</th>
+                    <th className="px-4 py-3">Loại</th>
+                    <th className="px-4 py-3 text-right">Tổng gọi</th>
+                    <th className="px-4 py-3 text-right">Thành công</th>
+                    <th className="px-4 py-3 text-right">Thất bại</th>
+                    <th className="px-4 py-3 text-right">Tỷ lệ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.05] bg-[#12131b]/60">
+                  {data?.modelBreakdown.map((item, idx) => (
+                    <tr key={item.rawModel} className="transition hover:bg-white/[0.03]">
+                      <td className="px-4 py-3 font-semibold text-neutral-400">
+                        #{idx + 1}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-white flex items-center gap-2">
+                        <span
+                          className="h-2 w-2 rounded-sm"
+                          style={{ backgroundColor: modelColors[item.model] || "#38bdf8" }}
+                        />
+                        {item.model}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[11px] text-neutral-300 uppercase">
+                          {item.kind}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-white">
+                        {item.total}
+                      </td>
+                      <td className="px-4 py-3 text-right text-emerald-400">
+                        {item.succeeded}
+                      </td>
+                      <td className="px-4 py-3 text-right text-red-400">
+                        {item.failed}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="font-semibold text-amber-300">
+                          {item.successRate}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
