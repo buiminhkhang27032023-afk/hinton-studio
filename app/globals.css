@@ -131,11 +131,23 @@ select.field {
 .react-flow__handle {
   width: 14px;
   height: 14px;
-  opacity: 0;
+  opacity: 0.55;
   background: #fff;
   border: 2px solid #000;
+  border-radius: 9999px;
   transform: translate(-50%, -50%);
-  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+  z-index: 20;
+}
+.react-flow__handle::after {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  right: -8px;
+  bottom: -8px;
+  border-radius: 9999px;
+  cursor: crosshair;
 }
 .react-flow__node:hover .react-flow__handle,
 .react-flow__node.selected .react-flow__handle,

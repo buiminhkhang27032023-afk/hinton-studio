@@ -44,8 +44,10 @@ import {
   Undo2,
   Redo2,
   Upload,
+  Bot,
 } from "lucide-react";
 import clsx from "clsx";
+import { CanvasCopilot } from "@/components/canvas/canvas-copilot";
 import { api } from "@/lib/api-client";
 import { useStudio } from "@/lib/studio-store";
 import { useUi } from "@/lib/ui-store";
@@ -99,8 +101,8 @@ function decorateEdge(edge: Edge, _list?: unknown): Edge {
     ...edge,
     type: "studio",
     animated: false,
-    sourceHandle: HANDLE_OUT,
-    targetHandle: HANDLE_IN,
+    sourceHandle: edge.sourceHandle || HANDLE_OUT,
+    targetHandle: edge.targetHandle || HANDLE_IN,
     data,
     style: { stroke: "#d4d4d4", strokeWidth: 1.5 },
   };
@@ -164,6 +166,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   const [linkDrag, setLinkDrag] = useState<LinkDrag | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [runningAll, setRunningAll] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
   const nodesRef = useRef(nodes);
@@ -319,8 +322,8 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        sourceHandle: HANDLE_OUT,
-        targetHandle: HANDLE_IN,
+        sourceHandle: edge.sourceHandle || HANDLE_OUT,
+        targetHandle: edge.targetHandle || HANDLE_IN,
         data: edge.data,
       })),
       viewport: getViewport(),
@@ -394,6 +397,95 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     [screenToFlowPosition, setNodes],
   );
 
+  const handleAddPromptFromCopilot = useCallback(
+    (promptText: string) => {
+      addNode("prompt", undefined, { text: promptText });
+    },
+    [addNode],
+  );
+
+  const handleAddStoryboardFromCopilot = useCallback(
+    (scenes: Array<{ title: string; prompt: string; modelKind?: "image" | "video" }>) => {
+      pushSnapshot();
+      const center = screenToFlowPosition({
+        x: (wrapper.current?.clientWidth ?? 900) / 2 - 280,
+        y: (wrapper.current?.clientHeight ?? 700) / 2 - 160,
+      });
+
+      const newNodes: StudioNode[] = [];
+      const newEdges: Edge[] = [];
+
+      scenes.forEach((sc, idx) => {
+        const promptId = `prompt-copilot-${Date.now()}-${idx}`;
+        const genId = `gen-copilot-${Date.now()}-${idx}`;
+        const isVideo = sc.modelKind !== "image";
+        const yOffset = idx * 240;
+
+        // Prompt Node
+        newNodes.push({
+          id: promptId,
+          type: "prompt",
+          position: { x: center.x, y: center.y + yOffset },
+          data: {
+            ...defaultData("prompt"),
+            text: sc.prompt,
+          },
+        } as StudioNode);
+
+        // Generate Node (placed to the right)
+        newNodes.push({
+          id: genId,
+          type: "generate",
+          position: { x: center.x + 360, y: center.y + yOffset },
+          data: {
+            ...defaultData("generate", { modelKind: isVideo ? "video" : "image" }),
+            prompt: sc.prompt,
+            modelKind: isVideo ? "video" : "image",
+            modelId: isVideo ? "iooai:omni_flash_10s" : "req/gpt-image-2",
+          },
+        } as StudioNode);
+
+        // Connect Prompt Node to Generate Node
+        newEdges.push({
+          id: `edge-${promptId}-${genId}`,
+          source: promptId,
+          sourceHandle: "out",
+          target: genId,
+          targetHandle: "in",
+          type: "studio",
+          style: { stroke: "#d4d4d4", strokeWidth: 1.5 },
+        });
+      });
+
+      setNodes((curr) => [...curr, ...newNodes]);
+      setEdges((curr) => [...curr, ...newEdges]);
+      if (newNodes.length > 0) {
+        setSelectedId(newNodes[0].id);
+      }
+    },
+    [screenToFlowPosition, setNodes, setEdges, pushSnapshot],
+  );
+
+  const handleUpdateSelectedNodeText = useCallback(
+    (newText: string) => {
+      if (!selectedId) return;
+      pushSnapshot();
+      setNodes((curr) =>
+        curr.map((n) => {
+          if (n.id !== selectedId) return n;
+          if (n.type === "prompt" || n.type === "prompt_master") {
+            return { ...n, data: { ...n.data, text: newText } };
+          }
+          if (n.type === "generate" || n.type === "fashion_tryon") {
+            return { ...n, data: { ...n.data, prompt: newText } };
+          }
+          return n;
+        }),
+      );
+    },
+    [selectedId, pushSnapshot, setNodes],
+  );
+
   const isValidConnection = useCallback((connection: Connection | Edge) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return false;
     const list = nodesRef.current;
@@ -411,8 +503,8 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         addEdge(
           {
             ...connection,
-            sourceHandle: HANDLE_OUT,
-            targetHandle: HANDLE_IN,
+            sourceHandle: connection.sourceHandle || HANDLE_OUT,
+            targetHandle: connection.targetHandle || HANDLE_IN,
             type: "studio",
             animated: false,
             data: {},
@@ -435,8 +527,8 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                 ...edge,
                 type: "studio",
                 animated: false,
-                sourceHandle: HANDLE_OUT,
-                targetHandle: HANDLE_IN,
+                sourceHandle: connection.sourceHandle || edge.sourceHandle || HANDLE_OUT,
+                targetHandle: connection.targetHandle || edge.targetHandle || HANDLE_IN,
                 data: {},
                 style: { stroke: "#d4d4d4", strokeWidth: 1.5 },
               }
@@ -1140,7 +1232,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             addEdge(
               {
                 source: connect.nodeId,
-                sourceHandle: HANDLE_OUT,
+                sourceHandle: connect.handleId || HANDLE_OUT,
                 target: id,
                 targetHandle: HANDLE_IN,
                 type: "studio",
@@ -1160,7 +1252,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                 source: id,
                 sourceHandle: HANDLE_OUT,
                 target: connect.nodeId,
-                targetHandle: HANDLE_IN,
+                targetHandle: connect.handleId || HANDLE_IN,
                 type: "studio",
                 style: { stroke: "#d4d4d4", strokeWidth: 1.5 },
               },
@@ -1347,6 +1439,20 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                 >
                   <Shirt size={13} />
                   Mẫu phối đồ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCopilotOpen((v) => !v)}
+                  className={clsx(
+                    "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition",
+                    copilotOpen
+                      ? "bg-violet-600 text-white shadow-[0_0_14px_rgba(139,92,246,0.6)]"
+                      : "border border-violet-500/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/60 hover:text-white",
+                  )}
+                  title="Trợ lý AI phòng dựng (gemini-3.5-flash)"
+                >
+                  <Bot size={13} className="text-violet-300" />
+                  Trợ lý AI
                 </button>
                 <span className="mx-0.5 h-4 w-px bg-white/10" />
                 <button
@@ -1537,6 +1643,17 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
               </span>
             </div>
           )}
+
+          <CanvasCopilot
+            isOpen={copilotOpen}
+            onClose={() => setCopilotOpen(false)}
+            nodes={nodes}
+            selectedNode={nodes.find((n) => n.id === selectedId) ?? null}
+            onAddPromptNode={handleAddPromptFromCopilot}
+            onAddStoryboard={handleAddStoryboardFromCopilot}
+            onUpdateSelectedNodeText={handleUpdateSelectedNodeText}
+            projectName={project.name}
+          />
         </div>
 
       <Inspector
