@@ -139,143 +139,32 @@ function TapFrame({
   );
 }
 
-/** Multi-directional and multi-slot connection handles: Left, Right, Top, Bottom */
+/** One input on the left, one output on the right. Both sit on the vertical center with enhanced hitbox. */
 function NodePorts({ out, accept }: { out?: PortKind | null; accept?: string | null }) {
   const hasAccept = Boolean(accept && accept.trim().length > 0);
   const hasOut = Boolean(out);
 
   return (
     <>
-      {/* --- IN HANDLES (Target / Cổng vào) --- */}
       {hasAccept && (
-        <>
-          {/* Cổng vào chính (Trái giữa) */}
-          <Handle
-            type="target"
-            position={Position.Left}
-            id="in"
-            title="Cổng vào chính (Trái)"
-            data-accept={accept}
-            style={{ top: "50%" }}
-            className="!border-2 !border-[#18181b] !bg-sky-400"
-          />
-          {/* Cổng vào nhánh 1 (Trái trên) */}
-          <Handle
-            type="target"
-            position={Position.Left}
-            id="in-left-top"
-            title="Cổng vào phụ 1 (Trái trên - Câu lệnh / Ảnh mẫu)"
-            data-accept={accept}
-            style={{ top: "25%" }}
-            className="!border-2 !border-[#18181b] !bg-sky-300"
-          />
-          {/* Cổng vào nhánh 2 (Trái dưới) */}
-          <Handle
-            type="target"
-            position={Position.Left}
-            id="in-left-bottom"
-            title="Cổng vào phụ 2 (Trái dưới - Trang phục / Tham chiếu)"
-            data-accept={accept}
-            style={{ top: "75%" }}
-            className="!border-2 !border-[#18181b] !bg-sky-300"
-          />
-          {/* Cổng vào từ trên (Top) */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="in-top"
-            title="Cổng vào từ trên (Top)"
-            data-accept={accept}
-            style={{ left: hasOut ? "35%" : "50%" }}
-            className="!border-2 !border-[#18181b] !bg-sky-400"
-          />
-          {/* Cổng vào từ dưới (Bottom) */}
-          <Handle
-            type="target"
-            position={Position.Bottom}
-            id="in-bottom"
-            title="Cổng vào từ dưới (Bottom)"
-            data-accept={accept}
-            style={{ left: hasOut ? "35%" : "50%" }}
-            className="!border-2 !border-[#18181b] !bg-sky-400"
-          />
-          {/* Cổng vào bên phải (cho luồng kết nối ngược) */}
-          <Handle
-            type="target"
-            position={Position.Right}
-            id="in-right"
-            title="Cổng vào phụ bên phải"
-            data-accept={accept}
-            style={{ top: hasOut ? "88%" : "50%" }}
-            className="!border-2 !border-[#18181b] !bg-sky-500"
-          />
-        </>
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="in"
+          title="Đầu vào (Nhận Prompt / Ảnh / Video)"
+          data-accept={accept}
+          className="!border-2 !border-[#18181b] !bg-sky-400"
+        />
       )}
-
-      {/* --- OUT HANDLES (Source / Cổng ra) --- */}
       {hasOut && (
-        <>
-          {/* Cổng ra chính (Phải giữa) */}
-          <Handle
-            type="source"
-            position={Position.Right}
-            id="out"
-            title="Cổng ra chính (Phải)"
-            data-port={out}
-            style={{ top: "50%" }}
-            className="!border-2 !border-[#18181b] !bg-amber-300"
-          />
-          {/* Cổng ra nhánh 1 (Phải trên) */}
-          <Handle
-            type="source"
-            position={Position.Right}
-            id="out-right-top"
-            title="Cổng ra nhánh 1 (Phải trên)"
-            data-port={out}
-            style={{ top: "25%" }}
-            className="!border-2 !border-[#18181b] !bg-amber-200"
-          />
-          {/* Cổng ra nhánh 2 (Phải dưới) */}
-          <Handle
-            type="source"
-            position={Position.Right}
-            id="out-right-bottom"
-            title="Cổng ra nhánh 2 (Phải dưới)"
-            data-port={out}
-            style={{ top: "75%" }}
-            className="!border-2 !border-[#18181b] !bg-amber-200"
-          />
-          {/* Cổng ra lên trên (Top) */}
-          <Handle
-            type="source"
-            position={Position.Top}
-            id="out-top"
-            title="Cổng ra lên trên (Top)"
-            data-port={out}
-            style={{ left: hasAccept ? "65%" : "50%" }}
-            className="!border-2 !border-[#18181b] !bg-amber-300"
-          />
-          {/* Cổng ra xuống dưới (Bottom) */}
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="out-bottom"
-            title="Cổng ra xuống dưới (Bottom)"
-            data-port={out}
-            style={{ left: hasAccept ? "65%" : "50%" }}
-            className="!border-2 !border-[#18181b] !bg-amber-300"
-          />
-          {/* Cổng ra bên trái (cho luồng kết nối ngược) */}
-          <Handle
-            type="source"
-            position={Position.Left}
-            id="out-left"
-            title="Cổng ra phụ bên trái"
-            data-port={out}
-            style={{ top: hasAccept ? "88%" : "50%" }}
-            className="!border-2 !border-[#18181b] !bg-amber-400"
-          />
-        </>
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="out"
+          title="Đầu ra (Truyền kết quả sang Node khác)"
+          data-port={out}
+          className="!border-2 !border-[#18181b] !bg-amber-300"
+        />
       )}
     </>
   );

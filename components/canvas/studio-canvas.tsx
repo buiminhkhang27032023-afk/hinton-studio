@@ -1430,41 +1430,44 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                                 <button
                   type="button"
                   onClick={loadFilmTemplate}
-                  className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] text-sky-200 hover:bg-white/10"
+                  className="flex items-center gap-1 rounded-full px-2 py-1.5 text-[11.5px] text-sky-200 hover:bg-white/10"
+                  title="Tạo sẵn khung cảnh làm phim"
                 >
-                  <Clapperboard size={13} />
-                  Mẫu làm phim
+                  <Clapperboard size={12.5} />
+                  Làm phim
                 </button>
-<button
+                <button
                   type="button"
                   onClick={loadFashionTemplate}
-                  className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] text-amber-200 hover:bg-white/10"
+                  className="flex items-center gap-1 rounded-full px-2 py-1.5 text-[11.5px] text-amber-200 hover:bg-white/10"
+                  title="Tạo sẵn mẫu phối đồ thời trang"
                 >
-                  <Shirt size={13} />
-                  Mẫu phối đồ
+                  <Shirt size={12.5} />
+                  Phối đồ
                 </button>
+                <span className="mx-0.5 h-3.5 w-px bg-white/10" />
                 <button
                   type="button"
                   onClick={() => setCopilotOpen((v) => !v)}
                   className={clsx(
-                    "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition",
+                    "flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[11.5px] font-medium transition",
                     copilotOpen
-                      ? "bg-violet-600 text-white shadow-[0_0_14px_rgba(139,92,246,0.6)]"
+                      ? "bg-violet-600 text-white shadow-[0_0_12px_rgba(139,92,246,0.6)]"
                       : "border border-violet-500/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/60 hover:text-white",
                   )}
                   title="Trợ lý AI phòng dựng (gemini-3.5-flash)"
                 >
-                  <Bot size={13} className="text-violet-300" />
+                  <Bot size={12.5} className="text-violet-300" />
                   Trợ lý AI
                 </button>
                 <button
                   type="button"
                   onClick={() => setGatewaysModalOpen(true)}
-                  className="flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-950/40 px-2.5 py-1.5 text-[12px] font-medium text-sky-200 transition hover:bg-sky-900/60 hover:text-white"
-                  title="Quản lý Cổng Nối API (Bùi Hữu Thắng, DuomiAPI, IOOAI, PiAPI, RunningHub, SiliconFlow...)"
+                  className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-950/40 px-2.5 py-1.5 text-[11.5px] font-medium text-sky-200 transition hover:bg-sky-900/60 hover:text-white"
+                  title="Quản lý Cổng Nối API (Bùi Hữu Thắng, DuomiAPI, IOOAI, PiAPI, RunningHub...)"
                 >
-                  <PlugZap size={13} className="text-sky-400" />
-                  Cổng Nối API
+                  <PlugZap size={12.5} className="text-sky-400" />
+                  Cổng API
                 </button>
                 <span className="mx-0.5 h-4 w-px bg-white/10" />
                 <button

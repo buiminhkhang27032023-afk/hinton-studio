@@ -11,7 +11,7 @@ export const dict: Dict = {
   "nav.spiderBrain": { vi: "Mạng Nơ-ron Não Bộ 3D 🧠", en: "3D Neural Brain 🧠" },
   "nav.canvas": { vi: "Không gian", en: "Canvas" },
   "nav.projects": { vi: "Dự án", en: "Projects" },
-  "nav.memory": { vi: "Bộ nhớ AI", en: "AI memory" },
+  "nav.memory": { vi: "Thống kê AI", en: "Analytics" },
   "nav.library": { vi: "Thư viện", en: "Library" },
   "nav.models": { vi: "Model", en: "Models" },
   "nav.settings": { vi: "Cài đặt", en: "Settings" },
