@@ -45,9 +45,11 @@ import {
   Redo2,
   Upload,
   Bot,
+  PlugZap,
 } from "lucide-react";
 import clsx from "clsx";
 import { CanvasCopilot } from "@/components/canvas/canvas-copilot";
+import { ApiGatewaysModal } from "@/components/canvas/api-gateways-modal";
 import { api } from "@/lib/api-client";
 import { useStudio } from "@/lib/studio-store";
 import { useUi } from "@/lib/ui-store";
@@ -167,6 +169,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [runningAll, setRunningAll] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [gatewaysModalOpen, setGatewaysModalOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
   const nodesRef = useRef(nodes);
@@ -1454,6 +1457,15 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                   <Bot size={13} className="text-violet-300" />
                   Trợ lý AI
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setGatewaysModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-950/40 px-2.5 py-1.5 text-[12px] font-medium text-sky-200 transition hover:bg-sky-900/60 hover:text-white"
+                  title="Quản lý Cổng Nối API (Bùi Hữu Thắng, DuomiAPI, IOOAI, PiAPI, RunningHub, SiliconFlow...)"
+                >
+                  <PlugZap size={13} className="text-sky-400" />
+                  Cổng Nối API
+                </button>
                 <span className="mx-0.5 h-4 w-px bg-white/10" />
                 <button
                   type="button"
@@ -1653,6 +1665,11 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             onAddStoryboard={handleAddStoryboardFromCopilot}
             onUpdateSelectedNodeText={handleUpdateSelectedNodeText}
             projectName={project.name}
+          />
+
+          <ApiGatewaysModal
+            isOpen={gatewaysModalOpen}
+            onClose={() => setGatewaysModalOpen(false)}
           />
         </div>
 

@@ -8,6 +8,7 @@ import clsx from "clsx";
 import { api } from "@/lib/api-client";
 import { useUi } from "@/lib/ui-store";
 import { Button, Field, Input, Spinner } from "@/components/ui/primitives";
+import { ApiGatewaysModal } from "@/components/canvas/api-gateways-modal";
 
 export default function SettingsPage() {
   const { tr, toast, lang, setLang } = useUi();
@@ -52,6 +53,63 @@ export default function SettingsPage() {
   const [runninghubSaving, setRunninghubSaving] = useState(false);
   const [runninghubBusy, setRunninghubBusy] = useState(false);
   const [runninghubMsg, setRunninghubMsg] = useState("");
+
+  const [gatewaysModalOpen, setGatewaysModalOpen] = useState(false);
+  const [duomiapiKey, setDuomiapiKey] = useState("");
+  const [duomiapiBaseUrl, setDuomiapiBaseUrl] = useState("https://duomiapi.com/v1");
+  const [duomiapiHasKey, setDuomiapiHasKey] = useState(false);
+  const [duomiapiSaving, setDuomiapiSaving] = useState(false);
+  const [duomiapiTesting, setDuomiapiTesting] = useState(false);
+  const [duomiapiResult, setDuomiapiResult] = useState<string | null>(null);
+
+  const saveDuomiapi = async () => {
+    setDuomiapiSaving(true);
+    setDuomiapiResult(null);
+    try {
+      await api.settings.save({
+        duomiapiApiKey: duomiapiKey.includes("••••") ? "" : duomiapiKey,
+        duomiapiBaseUrl,
+      });
+      setDuomiapiHasKey(Boolean(duomiapiKey.trim()) || duomiapiHasKey);
+      setDuomiapiKey((key) => (key.includes("••••") ? key : key ? `••••${key.slice(-4)}` : ""));
+      toast(tr("settings.saved"), "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Lỗi lưu key", "error");
+    } finally {
+      setDuomiapiSaving(false);
+    }
+  };
+
+  const testDuomiapi = async () => {
+    setDuomiapiTesting(true);
+    setDuomiapiResult(null);
+    try {
+      await saveDuomiapi();
+      const res = await fetch(withBasePath("/api/settings/test-gateway"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          providerId: "duomiapi",
+          baseUrl: duomiapiBaseUrl,
+          apiKey: duomiapiKey.includes("••••") ? "" : duomiapiKey,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setDuomiapiResult(data.message);
+        toast(data.message, "success");
+      } else {
+        setDuomiapiResult(data.error || "Kiểm tra thất bại");
+        toast(data.error || "Lỗi kết nối", "error");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setDuomiapiResult(msg);
+      toast(msg, "error");
+    } finally {
+      setDuomiapiTesting(false);
+    }
+  };
 
   const saveRunninghub = async () => {
     setRunninghubSaving(true);
@@ -168,12 +226,29 @@ export default function SettingsPage() {
       </header>
 
       <div className="mx-auto w-full max-w-2xl space-y-5 px-8 pb-12">
+        <div className="rounded-xl2 border border-sky-500/30 bg-sky-950/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20 text-sky-400 shrink-0">
+              <PlugZap size={22} />
+            </span>
+            <div>
+              <h3 className="text-[14px] font-semibold text-white">Trung Tâm Quản Lý Nhiều Cổng Nối API (AI Gateways)</h3>
+              <p className="text-[11.5px] text-neutral-400">
+                Hỗ trợ lưu đồng thời nhiều cổng: Bùi Hữu Thắng, DuomiAPI (多米API), IOOAI, PiAPI, RunningHub, SiliconFlow, DeepSeek, OpenRouter...
+              </p>
+            </div>
+          </div>
+          <Button variant="primary" onClick={() => setGatewaysModalOpen(true)}>
+            <PlugZap size={14} /> Mở Trình Quản Lý Cổng API
+          </Button>
+        </div>
+
         <section className="rounded-xl2 border border-ink-700/70 bg-ink-850/60 p-5">
           <div className="mb-4 flex items-center gap-2">
             <span className="grid h-7 w-7 place-items-center rounded-md bg-brass-700/25 text-brass-300">
               <PlugZap size={14} />
             </span>
-            <h2 className="text-[14px] font-medium">{tr("settings.api")}</h2>
+            <h2 className="text-[14px] font-medium">{tr("settings.api")} (Gateway Bùi Hữu Thắng)</h2>
           </div>
 
           <div className="space-y-3.5">
@@ -481,6 +556,7 @@ export default function SettingsPage() {
             {tr("common.save")}
           </Button>
         </div>
+        <ApiGatewaysModal isOpen={gatewaysModalOpen} onClose={() => { setGatewaysModalOpen(false); api.settings.get().then((s: any) => { if (s.duomiapi) { setDuomiapiKey(s.duomiapi.apiKey || ""); setDuomiapiHasKey(Boolean(s.duomiapi.hasKey)); } }); }} />
       </div>
     </div>
   );

@@ -7,6 +7,39 @@ import type { ModelConfig, ModelKind, ModelRecord } from "./types";
  */
 const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
   {
+    id: "duomiapi:kling_video",
+    label: "DuomiAPI · Kling Video AI",
+    kind: "video",
+    provider: "duomiapi",
+    description: "Tạo video chất lượng điện ảnh thông qua cổng DuomiAPI (多米API).",
+    config: {
+      endpoint: "/videos",
+      method: "POST",
+      body: { model: "kling-v1", prompt: "{{prompt}}", seconds: "{{duration}}", input_reference: "{{image}}" },
+      jobPath: "id",
+      pollEndpoint: "/videos/{{job}}",
+      statusPath: "status",
+      doneValues: ["completed", "succeeded", "success"],
+      failedValues: ["failed", "error"],
+      resultPath: "data.0.url",
+      timeout: 900,
+    },
+  },
+  {
+    id: "duomiapi:image",
+    label: "DuomiAPI · Tạo ảnh Midjourney / Flux",
+    kind: "image",
+    provider: "duomiapi",
+    description: "Sinh ảnh độ nét cao qua cổng DuomiAPI.",
+    config: {
+      endpoint: "/images/generations",
+      method: "POST",
+      body: { model: "flux-schnell", prompt: "{{prompt}}", n: 1, size: "{{size}}" },
+      resultPath: "data.0.url",
+      timeout: 300,
+    },
+  },
+  {
     id: "iooai:omni_flash_10s", label: "IOOAI · Omni ảnh → video · 10s",
     kind: "video", provider: "iooai",
     description: "Ảnh → video 10s. 720p: ¥0,80/lượt (tiết kiệm); 1080p: ¥0,85/lượt. 1–7 ảnh HTTPS công khai; 16:9 hoặc 9:16. Giá công bố IOOAI 23/10/2026.",

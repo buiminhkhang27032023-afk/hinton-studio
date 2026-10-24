@@ -33,9 +33,49 @@ export const IOOAI_PROVIDER: ProviderSettings = {
   baseUrl: "https://api.iooai.cn/v1", apiKey: "", proxyAssets: true, authHeader: "bearer",
 };
 
+export const DUOMIAPI_PROVIDER: ProviderSettings = {
+  baseUrl: "https://duomiapi.com/v1",
+  apiKey: "",
+  proxyAssets: true,
+  authHeader: "bearer",
+};
+
+export const SILICONFLOW_PROVIDER: ProviderSettings = {
+  baseUrl: "https://api.siliconflow.cn/v1",
+  apiKey: "",
+  proxyAssets: true,
+  authHeader: "bearer",
+};
+
+export const DEEPSEEK_PROVIDER: ProviderSettings = {
+  baseUrl: "https://api.deepseek.com/v1",
+  apiKey: "",
+  proxyAssets: true,
+  authHeader: "bearer",
+};
+
+export const OPENROUTER_PROVIDER: ProviderSettings = {
+  baseUrl: "https://openrouter.ai/api/v1",
+  apiKey: "",
+  proxyAssets: true,
+  authHeader: "bearer",
+};
+
+export const GROQ_PROVIDER: ProviderSettings = {
+  baseUrl: "https://api.groq.com/openai/v1",
+  apiKey: "",
+  proxyAssets: true,
+  authHeader: "bearer",
+};
+
 const PROVIDER_SETTING_KEY: Record<string, { key: string; fallback: ProviderSettings }> = {
   "openai-compatible": { key: "provider", fallback: DEFAULT_PROVIDER },
   provider: { key: "provider", fallback: DEFAULT_PROVIDER },
+  duomiapi: { key: "provider_duomiapi", fallback: DUOMIAPI_PROVIDER },
+  siliconflow: { key: "provider_siliconflow", fallback: SILICONFLOW_PROVIDER },
+  deepseek: { key: "provider_deepseek", fallback: DEEPSEEK_PROVIDER },
+  openrouter: { key: "provider_openrouter", fallback: OPENROUTER_PROVIDER },
+  groq: { key: "provider_groq", fallback: GROQ_PROVIDER },
   iooai: { key: "provider_iooai", fallback: IOOAI_PROVIDER },
   piapi: { key: "provider_piapi", fallback: PIAPI_PROVIDER },
   runninghub: { key: "provider_runninghub", fallback: RUNNINGHUB_PROVIDER },
@@ -45,8 +85,26 @@ const PROVIDER_SETTING_KEY: Record<string, { key: string; fallback: ProviderSett
 export * from "./provider-meta";
 
 export function getProvider(id: string = "openai-compatible"): ProviderSettings {
-  const entry = PROVIDER_SETTING_KEY[id] ?? PROVIDER_SETTING_KEY["openai-compatible"];
-  return { ...entry.fallback, ...getSetting<Partial<ProviderSettings>>(entry.key, {}) };
+  const normId = (id || "openai-compatible").toLowerCase();
+  const entry = PROVIDER_SETTING_KEY[normId];
+  if (entry) {
+    return { ...entry.fallback, ...getSetting<Partial<ProviderSettings>>(entry.key, {}) };
+  }
+  // Check custom providers stored in custom_providers setting
+  const customList = getSetting<Array<{ id: string; baseUrl: string; apiKey: string; authHeader?: "bearer" | "x-api-key" }>>(
+    "custom_providers",
+    [],
+  );
+  const foundCustom = customList.find((c) => c.id.toLowerCase() === normId);
+  if (foundCustom) {
+    return {
+      baseUrl: foundCustom.baseUrl || DEFAULT_PROVIDER.baseUrl,
+      apiKey: foundCustom.apiKey || "",
+      proxyAssets: true,
+      authHeader: foundCustom.authHeader || "bearer",
+    };
+  }
+  return { ...DEFAULT_PROVIDER, ...getSetting<Partial<ProviderSettings>>("provider", {}) };
 }
 
 function pick(obj: unknown, path: string): unknown {
@@ -142,8 +200,17 @@ export async function runModel(input: RunModelInput): Promise<RunModelResult> {
 async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
   const provider = getProvider(input.providerId);
   if (!provider.apiKey) {
-    const where = input.providerId === "iooai" ? "Cài đặt → IOOAI" : input.providerId === "piapi" ? "Cài đặt → PiAPI" : input.providerId?.startsWith("runninghub") ? "Cài đặt → RunningHub" : "Cài đặt → Kết nối API";
-    throw new Error(`Chưa cấu hình API key. Vào ${where} để nhập key.`);
+    const where =
+      input.providerId === "duomiapi"
+        ? "Cài đặt → Cổng DuomiAPI"
+        : input.providerId === "iooai"
+        ? "Cài đặt → Cổng IOOAI"
+        : input.providerId === "piapi"
+        ? "Cài đặt → Cổng PiAPI"
+        : input.providerId?.startsWith("runninghub")
+        ? "Cài đặt → Cổng RunningHub"
+        : "Cài đặt → Cổng Nối API";
+    throw new Error(`Chưa cấu hình API key cho cổng [${input.providerId}]. Vào ${where} để nhập key.`);
   }
 
   const base = provider.baseUrl.replace(/\/+$/, "");
