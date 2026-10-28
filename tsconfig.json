@@ -36,6 +36,7 @@
     "next-env.d.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules", "data", "output", "outputs", "output_lookbooks", ".next-deploy-check",
+    "scratch_tryon", "skill-packages", "KHE-SANG", "deploy", ".tmp"
   ]
 }

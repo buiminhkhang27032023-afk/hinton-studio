@@ -1,6 +1,7 @@
 "use client";
 
 import { withBasePath } from "@/lib/base-path";
+import { LazyVideo } from "@/components/ui/lazy-video";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Film, ImageIcon, Search, Trash2, Upload, FileText, Play } from "lucide-react";
@@ -134,14 +135,14 @@ export default function LibraryPage() {
               >
                 {asset.kind === "image" ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <img loading="lazy" decoding="async"
                     src={withBasePath(asset.url)}
                     alt={asset.name}
                     className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
                   />
                 ) : asset.kind === "video" ? (
                   <>
-                    <video src={withBasePath(asset.url)} className="h-full w-full object-cover" muted />
+                    <LazyVideo src={withBasePath(asset.url)} className="h-full w-full object-cover" />
                     <span className="absolute inset-0 grid place-items-center bg-ink-950/35">
                       <span className="grid h-9 w-9 place-items-center rounded-full bg-ink-950/70 text-ink-100 backdrop-blur">
                         <Play size={14} />
@@ -170,7 +171,7 @@ export default function LibraryPage() {
                 <video src={withBasePath(preview.url)} controls autoPlay className="max-h-[60vh] w-full" />
               ) : preview.kind === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={withBasePath(preview.url)} alt="" className="max-h-[60vh] w-full object-contain" />
+                <img loading="lazy" decoding="async" src={withBasePath(preview.url)} alt="" className="max-h-[60vh] w-full object-contain" />
               ) : (
                 <p className="p-6 text-center text-[13px] text-ink-400">{tr("common.empty")}</p>
               )}

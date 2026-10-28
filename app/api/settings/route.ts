@@ -8,6 +8,8 @@ import {
   DEEPSEEK_PROVIDER,
   OPENROUTER_PROVIDER,
   GROQ_PROVIDER,
+  BAILIAN_PROVIDER,
+  AUTODL_PROVIDER,
   getProvider,
 } from "@/lib/provider";
 import type { ProviderSettings } from "@/lib/types";
@@ -25,6 +27,8 @@ export async function GET() {
   const deepseek = getProvider("deepseek");
   const openrouter = getProvider("openrouter");
   const groq = getProvider("groq");
+  const bailian = getProvider("bailian");
+  const autodl = getProvider("autodl");
 
   const rawCustom = getSetting<Array<{ id: string; name: string; baseUrl: string; apiKey: string; icon?: string }>>(
     "custom_providers",
@@ -86,6 +90,16 @@ export async function GET() {
       apiKey: groq.apiKey ? `••••${groq.apiKey.slice(-4)}` : "",
       hasKey: Boolean(groq.apiKey),
     },
+    bailian: {
+      baseUrl: bailian.baseUrl || BAILIAN_PROVIDER.baseUrl,
+      apiKey: bailian.apiKey ? `••••${bailian.apiKey.slice(-4)}` : "",
+      hasKey: Boolean(bailian.apiKey),
+    },
+    autodl: {
+      baseUrl: autodl.baseUrl || AUTODL_PROVIDER.baseUrl,
+      apiKey: autodl.apiKey ? `••••${autodl.apiKey.slice(-4)}` : "",
+      hasKey: Boolean(autodl.apiKey),
+    },
     customProviders,
   });
 }
@@ -115,6 +129,12 @@ export async function PUT(request: Request) {
     groqApiKey?: string;
     groqBaseUrl?: string;
     groqClearKey?: boolean;
+    bailianApiKey?: string;
+    bailianBaseUrl?: string;
+    bailianClearKey?: boolean;
+    autodlApiKey?: string;
+    autodlBaseUrl?: string;
+    autodlClearKey?: boolean;
     customProviders?: Array<{ id: string; name: string; baseUrl: string; apiKey: string; icon?: string }>;
   };
 
@@ -241,6 +261,34 @@ export async function PUT(request: Request) {
       nextGroq.baseUrl = body.groqBaseUrl.trim().replace(/\/+$/, "");
     }
     setSetting("provider_groq", nextGroq);
+  }
+
+  // Alibaba Bailian
+  if (typeof body.bailianApiKey === "string" || body.bailianClearKey || typeof body.bailianBaseUrl === "string") {
+    const curBailian = getSetting<Partial<ProviderSettings>>("provider_bailian", {});
+    const nextBailian: Partial<ProviderSettings> = { ...curBailian };
+    if (body.bailianClearKey) nextBailian.apiKey = "";
+    else if (body.bailianApiKey && body.bailianApiKey.trim() && !body.bailianApiKey.includes("••••")) {
+      nextBailian.apiKey = body.bailianApiKey.trim();
+    }
+    if (typeof body.bailianBaseUrl === "string" && body.bailianBaseUrl.trim()) {
+      nextBailian.baseUrl = body.bailianBaseUrl.trim().replace(/\/+$/, "");
+    }
+    setSetting("provider_bailian", nextBailian);
+  }
+
+  // AutoDL ComfyUI
+  if (typeof body.autodlApiKey === "string" || body.autodlClearKey || typeof body.autodlBaseUrl === "string") {
+    const curAutodl = getSetting<Partial<ProviderSettings>>("provider_autodl", {});
+    const nextAutodl: Partial<ProviderSettings> = { ...curAutodl };
+    if (body.autodlClearKey) nextAutodl.apiKey = "";
+    else if (body.autodlApiKey && body.autodlApiKey.trim() && !body.autodlApiKey.includes("••••")) {
+      nextAutodl.apiKey = body.autodlApiKey.trim();
+    }
+    if (typeof body.autodlBaseUrl === "string" && body.autodlBaseUrl.trim()) {
+      nextAutodl.baseUrl = body.autodlBaseUrl.trim().replace(/\/+$/, "");
+    }
+    setSetting("provider_autodl", nextAutodl);
   }
 
   // Custom Gateways List

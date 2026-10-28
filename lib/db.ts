@@ -13,6 +13,10 @@ export function getDb(): DatabaseSync {
   db = new DatabaseSync(path.join(DATA_DIR, "studio.db"));
   db.exec(`
     PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA busy_timeout = 5000;
+    PRAGMA cache_size = -64000;
+    PRAGMA temp_store = MEMORY;
     PRAGMA foreign_keys = ON;
 
     CREATE TABLE IF NOT EXISTS projects (

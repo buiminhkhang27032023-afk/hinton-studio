@@ -1,4 +1,5 @@
 import { getDb, now, uid } from "./db";
+import { externalizeInline } from "./inline-media";
 import type { Asset, JobRecord, ModelKind } from "./types";
 
 export function createJob(input: {
@@ -34,7 +35,7 @@ export function createJob(input: {
       job.kind,
       job.model,
       job.status,
-      JSON.stringify(job.input),
+      JSON.stringify(externalizeInline(job.input, job.projectId)),
       job.createdAt,
       job.updatedAt,
     );
@@ -54,7 +55,7 @@ export function updateJob(
   }
   if (patch.output !== undefined) {
     sets.push("output = ?");
-    values.push(JSON.stringify(patch.output));
+    values.push(JSON.stringify(externalizeInline(patch.output, null)));
   }
   if (patch.error !== undefined) {
     sets.push("error = ?");

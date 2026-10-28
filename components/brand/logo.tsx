@@ -1,172 +1,143 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useId, useRef } from "react";
 import clsx from "clsx";
 import gsap from "gsap";
 
-/**
- * The Nefertiti-Inspired Regal "H" Mark.
- * Crafted with haute-couture faceted golden geometry, diamond-cut bridge,
- * and cinematic light-shimmer driven by GSAP animations.
- */
-export function LogoMark({
-  size = 36,
-  className,
-  animated = true,
-}: {
-  size?: number;
-  className?: string;
-  animated?: boolean;
+// Slightly curved pen movements and tapered ink silhouettes, rather than a font wipe.
+const PEN_STROKES = [
+  { d: "M37 19 C35 40 27 76 29 99", ink: "M34 19 Q37 15 40 19 C39 44 32 76 33 96 Q32 102 27 100 C23 81 31 39 34 19Z", start: 0.35, duration: 1.12 },
+  { d: "M87 19 C84 42 77 77 81 98", ink: "M85 18 Q88 15 91 19 C88 43 81 77 84 96 Q84 101 79 100 C72 85 81 40 85 18Z", start: 1.7, duration: 1.16 },
+  { d: "M24 65 C43 56 65 61 93 51", ink: "M23 64 C44 53 65 60 94 49 Q97 49 94 53 C68 64 45 59 25 67 Q21 68 23 64Z", start: 3.08, duration: 0.94 },
+];
+
+export function LogoMark({ size = 36, className, animated = true }: {
+  size?: number; className?: string; animated?: boolean;
 }) {
   const containerRef = useRef<HTMLSpanElement>(null);
-  const leftTowerRef = useRef<SVGPolygonElement>(null);
-  const rightTowerRef = useRef<SVGPolygonElement>(null);
-  const bridgeRef = useRef<SVGPolygonElement>(null);
-  const glowRef = useRef<SVGCircleElement>(null);
-  const sheenRef = useRef<SVGLinearGradientElement>(null);
+  const timelineRef = useRef<gsap.core.Timeline | null>(null);
+  const id = useId().replace(/:/g, "");
+  const url = (name: string) => `url(#${id}-${name})`;
 
   useEffect(() => {
     if (!animated || !containerRef.current) return;
-
-    const ctx = gsap.context(() => {
-      // Entrance timeline
-      const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
-
-      tl.fromTo(
-        glowRef.current,
-        { scale: 0.3, opacity: 0 },
-        { scale: 1, opacity: 0.8, duration: 1.2, ease: "elastic.out(1, 0.5)" },
-      )
-        .fromTo(
-          [leftTowerRef.current, rightTowerRef.current],
-          { y: -16, opacity: 0, scaleY: 0.4, transformOrigin: "50% 50%" },
-          { y: 0, opacity: 1, scaleY: 1, duration: 0.9, stagger: 0.12, ease: "back.out(2)" },
-          "-=0.8",
-        )
-        .fromTo(
-          bridgeRef.current,
-          { scaleX: 0, opacity: 0, transformOrigin: "50% 50%" },
-          { scaleX: 1, opacity: 1, duration: 0.6, ease: "power4.out" },
-          "-=0.4",
-        );
-
-      // Continuous golden light sweep loop
-      gsap.to(sheenRef.current, {
-        attr: { x1: "150%", x2: "250%" },
-        repeat: -1,
-        duration: 3.2,
-        ease: "power2.inOut",
-        repeatDelay: 1.2,
-      });
-    }, containerRef);
-
-    return () => ctx.revert();
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      const ctx = gsap.context(() => {
+        const root = containerRef.current!;
+        const nib = root.querySelector<SVGGElement>(".h-nib")!;
+        const bloom = root.querySelector<SVGGElement>(".h-bloom")!;
+        const ease = gsap.parseEase("power2.inOut");
+        const strokes = PEN_STROKES.map((stroke, i) => {
+          const guide = root.querySelector<SVGPathElement>(`.h-guide-${i}`)!;
+          const trail = root.querySelector<SVGPathElement>(`.h-trail-${i}`)!;
+          const ink = root.querySelector<SVGPathElement>(`.h-ink-${i}`)!;
+          const length = guide.getTotalLength();
+          // Use real SVG units for both the reveal and the moving pen.
+          for (const path of [guide, trail]) {
+            path.setAttribute("stroke-dasharray", `${length} ${length}`);
+          }
+          const sparks = Array.from({ length: 6 }, (_, j) => {
+            const fraction = (j + 1) / 7;
+            return {
+              node: root.querySelector<SVGCircleElement>(`.h-spark-${i * 6 + j}`)!,
+              point: guide.getPointAtLength(ease(fraction) * length),
+              time: stroke.start + stroke.duration * fraction,
+              drift: j % 2 ? 3 : -3,
+            };
+          });
+          return { ...stroke, guide, trail, ink, length, sparks, mask: `url(#${id}-mask-${i})` };
+        });
+        const render = (seconds: number) => {
+          nib.setAttribute("opacity", "0");
+          for (const stroke of strokes) {
+            const elapsed = seconds - stroke.start;
+            const fraction = Math.max(0, Math.min(1, elapsed / stroke.duration));
+            const progress = ease(fraction);
+            const offset = stroke.length * (1 - progress);
+            stroke.guide.setAttribute("stroke-dashoffset", String(offset));
+            stroke.trail.setAttribute("stroke-dashoffset", String(offset));
+            stroke.ink.setAttribute("opacity", elapsed > 0 ? "1" : "0");
+            stroke.ink.setAttribute("mask", fraction === 1 ? "none" : stroke.mask);
+            const fade = Math.max(0, 1 - Math.max(0, elapsed - stroke.duration) / 0.8);
+            stroke.trail.setAttribute("opacity", elapsed > 0 ? String(0.65 * fade) : "0");
+            if (elapsed >= 0 && fraction < 1) {
+              const point = stroke.guide.getPointAtLength(progress * stroke.length);
+              nib.setAttribute("transform", `translate(${point.x} ${point.y})`);
+              nib.setAttribute("opacity", String(Math.min(1, elapsed / 0.08, (stroke.duration - elapsed) / 0.08)));
+            }
+            for (const spark of stroke.sparks) {
+              const age = seconds - spark.time;
+              const life = Math.max(0, Math.min(1, age / 0.7));
+              spark.node.setAttribute("cx", String(spark.point.x + spark.drift * life));
+              spark.node.setAttribute("cy", String(spark.point.y - 5 * life));
+              spark.node.setAttribute("opacity", age >= 0 && age < 0.7 ? String(0.6 * (1 - life)) : "0");
+            }
+          }
+          // The whole-letter glow starts only after the last stroke is complete.
+          const finish = PEN_STROKES[2].start + PEN_STROKES[2].duration;
+          const pulse = Math.max(0, Math.min(1, (seconds - finish) / 0.3)) * Math.max(0, 1 - Math.max(0, seconds - finish - 0.3) / 1.2);
+          bloom.setAttribute("opacity", String(pulse * 0.24));
+        };
+        const clock = { seconds: 0 };
+        render(0);
+        const tl = gsap.timeline();
+        timelineRef.current = tl;
+        tl.fromTo(clock, { seconds: 0 }, {
+          seconds: 5.7, duration: 5.7, ease: "none",
+          onUpdate: () => render(clock.seconds),
+        }, 0)
+          .fromTo(".h-camera", { scale: 1.07, transformOrigin: "50% 50%" },
+            { scale: 1, duration: 5.7, ease: "power2.out" }, 0);
+        // GSAP owns the clock; restore a complete static mark on unmount/media change.
+        return () => {
+          render(5.7);
+          for (const stroke of strokes) {
+            stroke.guide.setAttribute("stroke-dasharray", "none");
+            stroke.guide.setAttribute("stroke-dashoffset", "0");
+          }
+        };
+      }, containerRef);
+      return () => { timelineRef.current = null; ctx.revert(); };
+    });
+    return () => media.revert();
   }, [animated]);
 
-  const handleMouseEnter = () => {
-    if (!containerRef.current) return;
-    gsap.to(containerRef.current, {
-      scale: 1.12,
-      filter: "drop-shadow(0 0 12px rgba(234, 179, 8, 0.75))",
-      duration: 0.3,
-      ease: "power2.out",
-    });
-  };
-
-  const handleMouseLeave = () => {
-    if (!containerRef.current) return;
-    gsap.to(containerRef.current, {
-      scale: 1,
-      filter: "drop-shadow(0 0 4px rgba(234, 179, 8, 0.2))",
-      duration: 0.4,
-      ease: "power2.out",
-    });
-  };
-
   return (
-    <span
-      ref={containerRef}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      className={clsx("relative inline-grid shrink-0 place-items-center cursor-pointer transition-transform", className)}
-      style={{ width: size, height: size }}
-      aria-hidden
-    >
-      <svg
-        viewBox="0 0 44 44"
-        width={size}
-        height={size}
-        className="relative z-10 overflow-visible"
-        shapeRendering="geometricPrecision"
-      >
+    <span ref={containerRef} aria-hidden="true"
+      onMouseEnter={() => { const tl = timelineRef.current; if (tl && !tl.isActive()) tl.restart(); }}
+      className={clsx("relative inline-grid shrink-0 place-items-center", className)}
+      style={{ width: size, height: size }}>
+      <svg className="h-camera relative overflow-visible" viewBox="0 0 120 120" width={size} height={size} shapeRendering="geometricPrecision">
         <defs>
-          {/* Ambient Nefertiti Gold Aura */}
-          <radialGradient id="nef-aura" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#fef08a" stopOpacity="0.45" />
-            <stop offset="60%" stopColor="#eab308" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#ca8a04" stopOpacity="0" />
-          </radialGradient>
-
-          {/* Primary Nefertiti Gold Gradient */}
-          <linearGradient id="nef-gold-main" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#fffdf0" />
-            <stop offset="30%" stopColor="#fef08a" />
-            <stop offset="70%" stopColor="#d97706" />
-            <stop offset="100%" stopColor="#78350f" />
+          <linearGradient id={`${id}-ink`} x1="20" y1="15" x2="95" y2="105" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#fff4da" /><stop offset="0.5" stopColor="#e8c98d" /><stop offset="1" stopColor="#b99253" />
           </linearGradient>
-
-          {/* Faceted Shadow Gold Gradient */}
-          <linearGradient id="nef-gold-shade" x1="0%" y1="100%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#451a03" />
-            <stop offset="50%" stopColor="#92400e" />
-            <stop offset="100%" stopColor="#b45309" />
-          </linearGradient>
-
-          {/* Sweeping Light Sheen */}
-          <linearGradient ref={sheenRef} id="nef-sheen" x1="-100%" y1="0%" x2="0%" y2="0%">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="0" />
-            <stop offset="50%" stopColor="#ffffff" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-          </linearGradient>
+          <filter id={`${id}-glow`} x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="1.7" /></filter>
+          <filter id={`${id}-bloom`} x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" /></filter>
+          {PEN_STROKES.map((stroke, i) => (
+            <mask key={i} id={`${id}-mask-${i}`} maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120" style={{ maskType: "luminance" }}>
+              <path className={`h-guide-${i} h-draw-${i}`} d={stroke.d} fill="none" stroke="white" strokeWidth="16" strokeLinecap="butt" strokeDashoffset="0" />
+            </mask>
+          ))}
         </defs>
-
-        {/* Ambient Back Glow */}
-        <circle ref={glowRef} cx="22" cy="22" r="20" fill="url(#nef-aura)" />
-
-        {/* Left Regal Tower (Chamfered Top & Stepped Egyptian Crown) */}
-        <g ref={leftTowerRef}>
-          {/* Main Tower Body */}
-          <polygon points="7,8 14,4 15,38 8,40" fill="url(#nef-gold-main)" />
-          {/* Beveled Outer Facet */}
-          <polygon points="7,8 8,40 5,38 5,10" fill="url(#nef-gold-shade)" />
-          {/* Crown Tip Highlight */}
-          <polygon points="7,8 14,4 12,3 6,6" fill="#fffef5" opacity="0.9" />
+        <g className="h-bloom" opacity="0" filter={url("bloom")} fill="#ebc880">
+          {PEN_STROKES.map((stroke, i) => <path key={i} d={stroke.ink} />)}
         </g>
-
-        {/* Right Regal Tower (Mirrored Symmetry) */}
-        <g ref={rightTowerRef}>
-          {/* Main Tower Body */}
-          <polygon points="30,4 37,8 36,40 29,38" fill="url(#nef-gold-main)" />
-          {/* Beveled Outer Facet */}
-          <polygon points="37,8 39,10 39,38 36,40" fill="url(#nef-gold-shade)" />
-          {/* Crown Tip Highlight */}
-          <polygon points="30,4 37,8 38,6 32,3" fill="#fffef5" opacity="0.9" />
+        {PEN_STROKES.map((stroke, i) => (
+          <g key={i}>
+            <path className={`h-trail-${i}`} d={stroke.d} stroke="#f5cc7c" strokeWidth="5" strokeLinecap="butt" fill="none" opacity="0" filter={url("glow")} />
+            <path className={`h-ink h-ink-${i}`} d={stroke.ink} fill={url("ink")} mask={url(`mask-${i}`)} />
+          </g>
+        ))}
+        <g fill="#ffe8b5">
+          {Array.from({ length: 18 }, (_, i) => <circle key={i} className={`h-spark-${i}`} r={i % 3 === 0 ? 0.35 : 0.18} opacity="0" />)}
         </g>
-
-        {/* Central Diamond-Cut Bridge */}
-        <polygon
-          ref={bridgeRef}
-          points="14,18 30,18 27,24 17,24"
-          fill="url(#nef-gold-main)"
-          stroke="#fffaf0"
-          strokeWidth="0.5"
-        />
-
-        {/* Center Diamond Gem Emblem */}
-        <polygon points="22,17 25,21 22,25 19,21" fill="#fffef0" opacity="0.95" />
-
-        {/* Light Sheen Overlay */}
-        <rect x="5" y="3" width="34" height="38" fill="url(#nef-sheen)" style={{ mixBlendMode: "overlay" }} />
+        <g className="h-nib" opacity="0">
+          <circle r="3.4" fill="#ffcf7a" opacity="0.75" filter={url("glow")} />
+          <ellipse rx="2.2" ry="0.38" fill="#fff2d1" opacity="0.8" />
+          <circle r="0.65" fill="#fffaf0" />
+        </g>
       </svg>
     </span>
   );
@@ -211,12 +182,12 @@ export function LogoWordmark({ className }: { className?: string }) {
       gsap.fromTo(
         subRef.current,
         {
-          opacity: 0,
-          letterSpacing: "0.15em",
+          opacity: 0.5,
+          letterSpacing: "0.2em",
         },
         {
-          opacity: 0.7,
-          letterSpacing: "0.26em",
+          opacity: 0.85,
+          letterSpacing: "0.28em",
           duration: 1,
           delay: 0.3,
           ease: "power2.out",
@@ -229,14 +200,14 @@ export function LogoWordmark({ className }: { className?: string }) {
 
   return (
     <span ref={containerRef} className={clsx("inline-flex flex-col select-none", className)}>
-      <span className="flex items-center tracking-[0.04em] font-sans text-[17px] font-extrabold uppercase leading-none text-transparent bg-clip-text bg-gradient-to-r from-amber-100 via-amber-200 to-amber-500">
+      <span className="flex items-center tracking-[0.04em] text-[18px] font-black uppercase text-transparent bg-clip-text bg-gradient-to-r from-[#fff5dd] via-[#eec988] to-[#d4a04d]">
         {word.split("").map((char, i) => (
           <span
             key={i}
             ref={(el) => {
               lettersRef.current[i] = el;
             }}
-            className="inline-block transition-transform hover:-translate-y-0.5"
+            className="inline-block transition-transform duration-200 hover:-translate-y-0.5"
           >
             {char}
           </span>
@@ -244,9 +215,9 @@ export function LogoWordmark({ className }: { className?: string }) {
       </span>
       <span
         ref={subRef}
-        className="mt-1 block text-[8.5px] font-semibold uppercase tracking-[0.26em] text-amber-200/60"
+        className="-mt-0.5 block text-[10.5px] font-bold lowercase tracking-[0.28em] text-[#e8c98d]"
       >
-        AI CINEMATIC
+        studio
       </span>
     </span>
   );

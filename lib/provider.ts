@@ -16,7 +16,7 @@ export const PIAPI_PROVIDER: ProviderSettings = {
 };
 
 export const RUNNINGHUB_PROVIDER: ProviderSettings = {
-  baseUrl: "https://www.runninghub.ai",
+  baseUrl: "https://www.runninghub.cn/openapi/v2",
   apiKey: "",
   proxyAssets: true,
   authHeader: "bearer",
@@ -68,6 +68,20 @@ export const GROQ_PROVIDER: ProviderSettings = {
   authHeader: "bearer",
 };
 
+export const BAILIAN_PROVIDER: ProviderSettings = {
+  baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+  apiKey: "",
+  proxyAssets: true,
+  authHeader: "bearer",
+};
+
+export const AUTODL_PROVIDER: ProviderSettings = {
+  baseUrl: "http://127.0.0.1:8188",
+  apiKey: "autodl",
+  proxyAssets: true,
+  authHeader: "bearer",
+};
+
 const PROVIDER_SETTING_KEY: Record<string, { key: string; fallback: ProviderSettings }> = {
   "openai-compatible": { key: "provider", fallback: DEFAULT_PROVIDER },
   provider: { key: "provider", fallback: DEFAULT_PROVIDER },
@@ -80,6 +94,9 @@ const PROVIDER_SETTING_KEY: Record<string, { key: string; fallback: ProviderSett
   piapi: { key: "provider_piapi", fallback: PIAPI_PROVIDER },
   runninghub: { key: "provider_runninghub", fallback: RUNNINGHUB_PROVIDER },
   "runninghub-llm": { key: "provider_runninghub", fallback: RUNNINGHUB_LLM_PROVIDER },
+  bailian: { key: "provider_bailian", fallback: BAILIAN_PROVIDER },
+  dashscope: { key: "provider_bailian", fallback: BAILIAN_PROVIDER },
+  autodl: { key: "provider_autodl", fallback: AUTODL_PROVIDER },
 };
 
 export * from "./provider-meta";
@@ -209,24 +226,64 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
         ? "Cài đặt → Cổng PiAPI"
         : input.providerId?.startsWith("runninghub")
         ? "Cài đặt → Cổng RunningHub"
+        : input.providerId === "bailian" || input.providerId === "dashscope"
+        ? "Cài đặt → Cổng Alibaba Bailian"
+        : input.providerId === "autodl"
+        ? "Cài đặt → Cổng AutoDL ComfyUI"
         : "Cài đặt → Cổng Nối API";
     throw new Error(`Chưa cấu hình API key cho cổng [${input.providerId}]. Vào ${where} để nhập key.`);
   }
 
   const base = provider.baseUrl.replace(/\/+$/, "");
   const vars: Record<string, unknown> = { ...input.vars, model: input.vars.model ?? input.model };
-  if (input.providerId?.startsWith("runninghub")) {
+  if (input.providerId?.startsWith("runninghub") || base.includes("runninghub")) {
     vars.apiKey = provider.apiKey;
+    const imgUrl =
+      (typeof vars.image === "string" && vars.image) ||
+      (typeof vars.firstImageUrl === "string" && vars.firstImageUrl) ||
+      (Array.isArray(vars.images) && typeof vars.images[0] === "string" && vars.images[0]) ||
+      "";
+    if (imgUrl) {
+      if (!vars.firstImageUrl) vars.firstImageUrl = imgUrl;
+      if (!vars.firstFrameUrl) vars.firstFrameUrl = imgUrl;
+      if (!vars.imageUrl) vars.imageUrl = imgUrl;
+    }
+    vars.resolution = vars.resolution || "720p";
+    vars.duration = String(vars.duration || vars.seconds || "5");
+    vars.sound = vars.sound ?? "false";
+    vars.bgm = vars.bgm ?? "false";
+    vars.movementAmplitude = vars.movementAmplitude ?? "auto";
+    vars.aspectRatio = vars.aspectRatio || vars.aspect || "9:16";
+    if ((String(input.model).includes("mimicmotion") || String(input.model).includes("animate-anyone")) && (!vars.workflowId || String(vars.workflowId).includes("_"))) {
+      throw new Error(
+        "Chưa nhập mã Workflow ID RunningHub. Hãy vào runninghub.ai tìm workflow MimicMotion/AnimateAnyone, copy dãy số 19 chữ số trên thanh URL và dán vào ô 'Mã Workflow ID' trong bảng Inspector (hoặc dùng model Kling 2.6 Pro / Wan 2.7 không cần ID)."
+      );
+    }
   }
   if (input.providerId === "iooai") {
-    const images = Array.isArray(vars.images) ? vars.images : [];
-    if (!images.length || images.length > 7 || images.some((url) => {
-      if (typeof url !== "string") return true;
-      try { const u = new URL(url); return u.protocol !== "https:" || /^(localhost|127\.|192\.168\.|10\.|\[::1\])/.test(u.hostname); }
-      catch { return true; }
-    })) throw new Error("Omni IOOAI cần 1–7 ảnh có URL HTTPS công khai. Ảnh tải lên localhost chưa dùng được; hãy dùng URL ảnh công khai.");
+    vars.aspect = vars.aspect === "9:16" ? "9:16" : "16:9";
+    vars.ratio = vars.aspect;
     vars.resolution = vars.resolution === "1080p" ? "1080p" : "720p";
-    if (vars.aspect !== "16:9" && vars.aspect !== "9:16") throw new Error("Omni IOOAI chỉ hỗ trợ 16:9 hoặc 9:16.");
+
+    // Auto-normalize duration & seconds to match IOOAI endpoint requirements
+    const mid = String(vars.model || input.model || "").toLowerCase();
+    let sec = Number(vars.seconds ?? vars.duration ?? 15);
+    if (mid.includes("快速版") || (mid.includes("seedance2.5") && !mid.includes("lw"))) {
+      sec = sec > 15 ? 30 : 15;
+    } else if (mid.includes("线路三") || mid.includes("线路二")) {
+      sec = 30;
+    } else if (mid.includes("特价")) {
+      sec = 15;
+    } else if (mid.includes("omni")) {
+      sec = 10;
+    } else if (mid.includes("lw")) {
+      const allowed = [5, 8, 10, 12, 13, 15, 30];
+      sec = allowed.reduce((prev, curr) => Math.abs(curr - sec) < Math.abs(prev - sec) ? curr : prev, 15);
+    } else if (mid.includes("seedance 2.0") || mid.includes("seedance2.0")) {
+      sec = Math.min(15, Math.max(4, Math.round(sec)));
+    }
+    vars.seconds = String(sec);
+    vars.duration = sec;
   }
   if (input.providerId === "duomiapi" && input.config.endpoint?.includes("contents/generations/tasks")) {
     const prompt = String(vars.prompt || "").trim();
@@ -235,6 +292,34 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
     if (prompt) content.push({ type: "text", text: prompt });
     if (image) content.push({ type: "image_url", image_url: { url: image } });
     vars.content = content.length > 0 ? content : [{ type: "text", text: "cinematic high quality video" }];
+  }
+  if (input.config.endpoint?.includes("/chat/completions") && input.kind === "image") {
+    const prompt = String(vars.prompt || "").trim();
+    const imgs: string[] = [];
+    const pushImg = (val: unknown) => {
+      if (typeof val === "string" && val.trim() && !imgs.includes(val.trim())) {
+        imgs.push(val.trim());
+      }
+    };
+    if (Array.isArray(vars.images)) {
+      for (const item of vars.images) pushImg(item);
+    }
+    pushImg(vars.modelImage);
+    pushImg(vars.garmentImage);
+    pushImg(vars.image);
+
+    const content: Array<Record<string, unknown>> = [];
+    if (prompt) content.push({ type: "text", text: prompt });
+    for (const url of imgs) {
+      content.push({ type: "image_url", image_url: { url } });
+    }
+    vars.content = content.length > 0 ? content : [{ type: "text", text: prompt || "photorealistic high quality image" }];
+    vars.messages = [
+      {
+        role: "user",
+        content: vars.content,
+      },
+    ];
   }
   if (input.providerId === "piapi" && input.config.body?.task_type === "seedance-2-mini-less-restriction") {
     const images = Array.isArray(vars.imageUrls) ? vars.imageUrls : [];
@@ -248,8 +333,34 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
   const method = input.config.method ?? "POST";
   const timeoutMs = (input.config.timeout ?? 300) * 1000;
 
+  const resolveEndpointUrl = (endpoint: string) => {
+    if (/^https?:\/\//i.test(endpoint)) return endpoint;
+    let cleanBase = base.replace(/\/+$/, "");
+    let cleanEp = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+
+    if (input.providerId?.startsWith("runninghub") || cleanBase.includes("runninghub")) {
+      const isComfy = cleanEp.startsWith("/task/");
+      const isLlm = cleanEp.startsWith("/chat/") || cleanEp.startsWith("/models") || cleanEp.startsWith("/v1/");
+      const isV2 = cleanEp.startsWith("/openapi/v2");
+
+      if (isLlm) {
+        if (!cleanBase.includes("llm.runninghub.ai")) {
+          cleanBase = "https://llm.runninghub.ai/v1";
+          cleanEp = cleanEp.replace(/^\/v1/, "");
+        }
+      } else if (!isComfy) {
+        if (cleanBase.endsWith("/openapi/v2") && isV2) {
+          cleanEp = cleanEp.replace(/^\/openapi\/v2/, "");
+        } else if (!cleanBase.endsWith("/openapi/v2") && !isV2) {
+          cleanBase = `${cleanBase}/openapi/v2`;
+        }
+      }
+    }
+    return `${cleanBase}${cleanEp}`;
+  };
+
   const buildUrl = (endpoint: string) => {
-    const url = `${base}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+    const url = resolveEndpointUrl(endpoint);
     if (method === "GET" && input.config.body) {
       const params = stripEmpty(fillTemplate(input.config.body, vars) as Record<string, unknown>);
       const qs = new URLSearchParams(
@@ -264,7 +375,7 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
    * `verb` defaults to the config's method. Polling and content endpoints are
    * always GET — sending the create-method there returns 405.
    */
-  const buildGetUrl = (endpoint: string) => `${base}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+  const buildGetUrl = (endpoint: string) => resolveEndpointUrl(endpoint);
 
   const send = async (endpoint: string, attempts = 6, verb?: "GET" | "POST", customBody?: unknown) => {
     const useMethod = verb ?? method;
@@ -274,7 +385,7 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
       ...(input.config.headers ?? {}),
     };
     if (input.providerId?.startsWith("runninghub") || base.includes("runninghub")) {
-      try { headers["Host"] = new URL(base).host; } catch {}
+      try { headers["Host"] = new URL(url).host; } catch {}
     }
     const baseInit: RequestInit = { method: useMethod, headers };
     if (useMethod === "POST") {
@@ -332,6 +443,30 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
   };
 
   const json = await send(input.config.endpoint, input.providerId === "iooai" ? 1 : 6);
+
+  if (input.providerId?.startsWith("runninghub") || base.includes("runninghub")) {
+    const errCode = String(pick(json, "errorCode") ?? "");
+    if (errCode && errCode !== "0" && errCode !== "null" && errCode !== "undefined") {
+      const errMsg = (pick(json, "errorMessage") as string) || "Lỗi yêu cầu RunningHub";
+      if (errCode === "605") {
+        throw new Error(
+          "Tài khoản RunningHub của bạn không đủ số dư (còn 3.05 CNY). Vui lòng nạp thêm tại runninghub.ai hoặc chuyển sang nguồn IOOAI / Gateway Bùi Hữu Thắng.",
+        );
+      }
+      throw new Error(`RunningHub báo lỗi [${errCode}]: ${errMsg}`);
+    }
+    const code = pick(json, "code");
+    if (code !== undefined && code !== null && code !== 0 && code !== 200) {
+      if (code === 404 && (String(input.model).includes("mimicmotion") || String(input.model).includes("animate"))) {
+        throw new Error(
+          "Model MimicMotion/AnimateAnyone là dạng ComfyUI Cloud cần có Workflow ID riêng trên tài khoản RunningHub. Hãy chuyển sang model [RunningHub · Kling 2.6 Pro Video] hoặc [Alibaba Wan 2.7] để tạo chuyển động cho người mẫu ngay lập tức."
+        );
+      }
+      const msg = (pick(json, "msg") as string) || (pick(json, "message") as string) || "Lỗi RunningHub";
+      throw new Error(`RunningHub báo lỗi [${code}]: ${msg}`);
+    }
+  }
+
   const resultPath = input.config.resultPath ?? "data.0.url";
   const direct = pick(json, resultPath);
 
@@ -355,8 +490,8 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
 
   // Async job flow: poll until the status field says done / failed.
   const jobId = input.config.jobPath
-    ? (pick(json, input.config.jobPath) ?? pick(json, "data.task_id") ?? pick(json, "task_id") ?? pick(json, "id"))
-    : (pick(json, "id") ?? pick(json, "task_id") ?? pick(json, "data.task_id"));
+    ? (pick(json, input.config.jobPath) ?? pick(json, "taskId") ?? pick(json, "data.taskId") ?? pick(json, "task_id") ?? pick(json, "data.task_id") ?? pick(json, "id"))
+    : (pick(json, "taskId") ?? pick(json, "id") ?? pick(json, "task_id") ?? pick(json, "data.taskId") ?? pick(json, "data.task_id"));
   if (input.config.pollEndpoint && jobId != null) {
     const statusPath = input.config.statusPath ?? "status";
     const done = input.config.doneValues ?? ["succeeded", "completed", "success", "done"];
@@ -373,8 +508,21 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
       const status = String(rawStatus ?? "").toLowerCase();
       lastStatus = status;
 
+      if (input.providerId?.startsWith("runninghub") || base.includes("runninghub")) {
+        const pErrCode = String(pick(pollJson, "errorCode") ?? "");
+        if (pErrCode && pErrCode !== "0" && pErrCode !== "null" && pErrCode !== "undefined" && pErrCode !== "1004") {
+          const pErrMsg = (pick(pollJson, "errorMessage") as string) || `Mã lỗi ${pErrCode}`;
+          if (pErrCode === "605") {
+            throw new Error("Tài khoản RunningHub của bạn không đủ số dư.");
+          }
+          throw new Error(`Tác vụ RunningHub thất bại [${pErrCode}]: ${pErrMsg}`);
+        }
+      }
+
       if (failed.includes(status)) {
         const detail =
+          (pick(pollJson, "errorMessage") as string) ??
+          (pick(pollJson, "failedReason.message") as string) ??
           (pick(pollJson, "error.message") as string) ??
           (pick(pollJson, "error") as string) ??
           status;
@@ -382,15 +530,18 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
       }
 
       if (done.includes(status)) {
-        if (input.providerId === "iooai" && pick(pollJson, "download_ready") !== true) continue;
+        if (input.providerId === "iooai" && pick(pollJson, "download_ready") === false) continue;
         let finalValue = pick(pollJson, resultPath);
         if (!finalValue || typeof finalValue !== "string") {
-          finalValue = pick(pollJson, "data.content.0.video_url")
+          finalValue = pick(pollJson, "results.0.url")
+            ?? pick(pollJson, "data.outputUrl")
+            ?? pick(pollJson, "output_url")
+            ?? pick(pollJson, "video_url")
+            ?? pick(pollJson, "videos.0.url")
+            ?? pick(pollJson, "data.content.0.video_url")
             ?? pick(pollJson, "data.video_url")
             ?? pick(pollJson, "data.url")
-            ?? pick(pollJson, "video_url")
-            ?? pick(pollJson, "url")
-            ?? pick(pollJson, "output_url");
+            ?? pick(pollJson, "url");
         }
         if (typeof finalValue === "string" && finalValue) {
           return {

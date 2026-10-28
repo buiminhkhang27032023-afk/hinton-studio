@@ -122,6 +122,26 @@ const PRESET_GATEWAYS: Array<Omit<GatewayConfig, "apiKey" | "hasKey" | "baseUrl"
     docUrl: "https://console.groq.com",
     description: "Tốc độ phản hồi cực nhanh trên chip LPU dành cho prompt và kịch bản.",
   },
+  {
+    id: "bailian",
+    name: "Alibaba Cloud Bailian (阿里云百炼)",
+    short: "Alibaba Bailian",
+    icon: "🟠",
+    badge: "BAILIAN",
+    defaultUrl: "https://dashscope.aliyuncs.com/api/v1",
+    docUrl: "https://bailian.console.aliyun.com",
+    description: "Cổng chính hãng Alibaba DashScope, chuyên AnimateAnyone (nhảy múa) và Wanx video.",
+  },
+  {
+    id: "autodl",
+    name: "AutoDL ComfyUI (GPU Riêng ~5k/h)",
+    short: "AutoDL",
+    icon: "💻",
+    badge: "AUTODL",
+    defaultUrl: "https://uXXXX-8188.westc.gpuhub.com",
+    docUrl: "https://www.autodl.com",
+    description: "Kết nối máy chủ RTX 4090 riêng trên AutoDL chạy ComfyUI MimicMotion, 0 giây xếp hàng.",
+  },
 ];
 
 interface ApiGatewaysModalProps {
@@ -193,6 +213,16 @@ export function ApiGatewaysModal({ isOpen, onClose }: ApiGatewaysModalProps) {
           baseUrl: data.groq?.baseUrl || "https://api.groq.com/openai/v1",
           apiKey: data.groq?.apiKey || "",
           hasKey: data.groq?.hasKey || false,
+        },
+        bailian: {
+          baseUrl: data.bailian?.baseUrl || "https://dashscope.aliyuncs.com/api/v1",
+          apiKey: data.bailian?.apiKey || "",
+          hasKey: data.bailian?.hasKey || false,
+        },
+        autodl: {
+          baseUrl: data.autodl?.baseUrl || "https://uXXXX-8188.westc.gpuhub.com",
+          apiKey: data.autodl?.apiKey || "autodl",
+          hasKey: data.autodl?.hasKey || false,
         },
       };
 
@@ -296,6 +326,12 @@ export function ApiGatewaysModal({ isOpen, onClose }: ApiGatewaysModalProps) {
       } else if (currentConfig.id === "groq") {
         payload.groqBaseUrl = currentConfig.baseUrl;
         if (!currentConfig.apiKey.includes("••••")) payload.groqApiKey = currentConfig.apiKey;
+      } else if (currentConfig.id === "bailian") {
+        payload.bailianBaseUrl = currentConfig.baseUrl;
+        if (!currentConfig.apiKey.includes("••••")) payload.bailianApiKey = currentConfig.apiKey;
+      } else if (currentConfig.id === "autodl") {
+        payload.autodlBaseUrl = currentConfig.baseUrl;
+        if (!currentConfig.apiKey.includes("••••")) payload.autodlApiKey = currentConfig.apiKey;
       } else if (currentCustom) {
         payload.customProviders = customList;
       }

@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { getSetting, setSetting } from "./db";
 import { getProvider } from "./provider";
 import { hasPublicBase, toProviderUrl } from "./public-url";
-import { localUrlToDataUri } from "./storage";
+import { localUrlToDataUri, resolveLocalAssetPath } from "./storage";
 
 /**
  * Providers that generate video from reference images (IOOAI, PiAPI) refuse
@@ -41,19 +43,115 @@ export async function prepareReferenceImages(sources: unknown[]): Promise<string
       }
     }
 
-    // Fallback: upload to PiAPI for a temporary public URL.
+    // 2. High-speed Tencent Cloud CDN via RunningHub
+    try {
+      urls.push(await uploadToRunningHub(source));
+      continue;
+    } catch (rhErr) {
+      console.warn("RunningHub upload fallback failed:", rhErr);
+    }
+
+    // 3. Fallback: upload to PiAPI for a temporary public URL.
     urls.push(await uploadToPiApi(source));
   }
 
   return urls;
 }
 
+export async function prepareReferenceMedia(source: string): Promise<string> {
+  if (!source) return "";
+  if (/^https:\/\//i.test(source)) return source;
+  if (hasPublicBase()) {
+    const publicUrl = toProviderUrl(source);
+    if (/^https:\/\//i.test(publicUrl) && !publicUrl.includes("localhost")) {
+      return publicUrl;
+    }
+  }
+  return await uploadToRunningHub(source);
+}
+
+export async function uploadToRunningHub(source: string): Promise<string> {
+  let bytes: Buffer;
+  let mime = "image/jpeg";
+  let ext = "jpg";
+
+  if (source.startsWith("/api/files/")) {
+    const fullPath = resolveLocalAssetPath(source);
+    if (!fullPath || !fs.existsSync(fullPath)) throw new Error("Không tìm thấy tệp trong thư viện.");
+    bytes = fs.readFileSync(fullPath);
+    const extname = path.extname(fullPath).slice(1).toLowerCase();
+    if (extname === "mp4") mime = "video/mp4";
+    else if (extname === "webm") mime = "video/webm";
+    else if (extname === "mov") mime = "video/quicktime";
+    else if (extname === "png") mime = "image/png";
+    else if (extname === "webp") mime = "image/webp";
+    else if (extname === "gif") mime = "image/gif";
+    else mime = "image/jpeg";
+    ext = extname || "jpg";
+  } else if (source.startsWith("data:")) {
+    const commaIdx = source.indexOf(",");
+    if (commaIdx === -1) throw new Error("Dữ liệu tệp không hợp lệ.");
+    const prefix = source.slice(0, commaIdx);
+    const base64Data = source.slice(commaIdx + 1);
+    const mimeMatch = /^data:([^;,]+)/i.exec(prefix);
+    mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+    ext = mime.includes("png") ? "png" : mime.includes("mp4") ? "mp4" : mime.includes("webp") ? "webp" : "jpg";
+    bytes = Buffer.from(base64Data, "base64");
+  } else if (/^https?:\/\//i.test(source)) {
+    return source;
+  } else {
+    throw new Error("Định dạng tệp không hợp lệ.");
+  }
+
+  const provider = getProvider("runninghub");
+  if (!provider.apiKey) throw new Error("Thiếu key RunningHub.");
+
+  const hash = createHash("sha256").update(bytes).digest("hex");
+  const cacheKey = `rh_upload:${hash}`;
+  const cached = getSetting<{ url: string; expires: number } | null>(cacheKey, null);
+  if (cached && cached.expires > Date.now()) return cached.url;
+
+  const formData = new FormData();
+  const blob = new Blob([bytes as unknown as BlobPart], { type: mime });
+  formData.append("file", blob, `ref-${hash.slice(0, 16)}.${ext}`);
+
+  const response = await fetch("https://www.runninghub.cn/openapi/v2/media/upload/binary", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${provider.apiKey}`,
+      Host: "www.runninghub.cn",
+    },
+    body: formData,
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  const payload = (await response.json()) as {
+    code?: number;
+    data?: { download_url?: string };
+    msg?: string;
+  };
+
+  if (!response.ok || payload.code !== 0 || !payload.data?.download_url?.startsWith("https://")) {
+    throw new Error(`RunningHub upload thất bại: ${payload.msg ?? response.statusText}`);
+  }
+
+  const url = payload.data.download_url;
+  setSetting(cacheKey, { url, expires: Date.now() + 23 * 60 * 60 * 1000 });
+  return url;
+}
+
 async function uploadToPiApi(source: string): Promise<string> {
   const inline = localUrlToDataUri(source);
-  const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=\r\n]+)$/.exec(inline);
-  if (!match) throw new Error("Không đọc được ảnh PNG/JPEG/WebP từ thư viện.");
+  if (!inline.startsWith("data:image/")) throw new Error("Không đọc được ảnh từ thư viện.");
+  const commaIdx = inline.indexOf(",");
+  if (commaIdx === -1) throw new Error("Dữ liệu ảnh không hợp lệ.");
 
-  const bytes = Buffer.from(match[2], "base64");
+  const prefix = inline.slice(0, commaIdx);
+  const base64Data = inline.slice(commaIdx + 1);
+  const mimeMatch = /^data:(image\/(png|jpeg|webp|gif))/i.exec(prefix);
+  const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+  const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+  const bytes = Buffer.from(base64Data, "base64");
   if (bytes.length > 7 * 1024 * 1024) throw new Error("Ảnh tham chiếu phải nhỏ hơn 7 MB.");
 
   const provider = getProvider("piapi");
@@ -68,7 +166,7 @@ async function uploadToPiApi(source: string): Promise<string> {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": provider.apiKey },
     body: JSON.stringify({
-      file_name: `reference-${hash.slice(0, 16)}.${match[1] === "jpeg" ? "jpg" : match[1]}`,
+      file_name: `reference-${hash.slice(0, 16)}.${ext}`,
       file_data: inline,
     }),
     signal: AbortSignal.timeout(120_000),

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ASSET_DIR, getDb, now, uid } from "./db";
 import type { Asset, AssetKind } from "./types";
+import { externalizeInline } from "./inline-media";
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/png": "png",
@@ -66,7 +67,7 @@ export function saveAsset(opts: {
       kind,
       opts.mime,
       url,
-      JSON.stringify(opts.meta ?? {}),
+      JSON.stringify(externalizeInline(opts.meta ?? {}, opts.projectId)),
       createdAt,
     );
 
@@ -159,21 +160,102 @@ export async function persistRemoteAsset(opts: {
 }
 
 /**
- * Turn a locally stored asset URL into a data URI. Provider servers cannot read
- * our /api/files paths, so any local image has to be inlined before upload.
+ * Resolve a local asset URL (/api/files/...) to its absolute filesystem path.
  */
-export function localUrlToDataUri(url: string): string {
-  if (!url || !url.startsWith("/api/files/")) return url;
+export function resolveLocalAssetPath(url: string): string | null {
+  if (!url || !url.startsWith("/api/files/")) return null;
   const parts = url.split("/").filter(Boolean); // ["api","files",project,file]
   const project = decodeURIComponent(parts[2] ?? "");
   const file = decodeURIComponent(parts[3] ?? "");
   const full = path.join(ASSET_DIR, project, path.basename(file));
-  if (!full.startsWith(ASSET_DIR) || !fs.existsSync(full)) return url;
-  const ext = file.split(".").pop()?.toLowerCase() ?? "";
+  if (!full.startsWith(ASSET_DIR) || !fs.existsSync(full)) return null;
+  return full;
+}
+
+/**
+ * Turn a locally stored asset URL into a data URI. Provider servers cannot read
+ * our /api/files paths, so any local image has to be inlined before upload.
+ */
+export function localUrlToDataUri(url: string): string {
+  const full = resolveLocalAssetPath(url);
+  if (!full) return url;
+  const ext = path.extname(full).slice(1).toLowerCase();
   const mime =
     ext === "jpg" || ext === "jpeg" ? "image/jpeg"
     : ext === "webp" ? "image/webp"
     : ext === "gif" ? "image/gif"
+    : ext === "mp4" ? "video/mp4"
+    : ext === "webm" ? "video/webm"
+    : ext === "mov" ? "video/quicktime"
     : "image/png";
   return `data:${mime};base64,${fs.readFileSync(full).toString("base64")}`;
+}
+
+
+/**
+ * Automatically resize & compress images to max 1024px JPEG (quality 85%).
+ * This shrinks raw 2-4MB PNG base64 strings down to ~100-150KB, preventing
+ * gateway 502 timeouts on multimodal vision endpoints like Gemini.
+ */
+export async function optimizeImageDataUri(
+  input: string,
+  maxDim = 1024,
+  quality = 85,
+): Promise<string> {
+  if (!input || typeof input !== 'string') return input;
+
+  let buffer: Buffer | null = null;
+  let originalMime = 'image/jpeg';
+
+  if (input.startsWith('data:')) {
+    const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(input);
+    if (!match) return input;
+    originalMime = match[1] || 'image/jpeg';
+    buffer = match[2]
+      ? Buffer.from(match[3], 'base64')
+      : Buffer.from(decodeURIComponent(match[3]));
+  } else if (input.startsWith('/api/files/')) {
+    const parts = input.split('/').filter(Boolean);
+    const project = decodeURIComponent(parts[2] ?? '');
+    const file = decodeURIComponent(parts[3] ?? '');
+    const full = path.join(ASSET_DIR, project, path.basename(file));
+    if (full.startsWith(ASSET_DIR) && fs.existsSync(full)) {
+      buffer = fs.readFileSync(full);
+      const ext = file.split('.').pop()?.toLowerCase() ?? '';
+      originalMime =
+        ext === 'jpg' || ext === 'jpeg'
+          ? 'image/jpeg'
+          : ext === 'webp'
+            ? 'image/webp'
+            : ext === 'gif'
+              ? 'image/gif'
+              : 'image/png';
+    }
+  }
+
+  if (!buffer) return input;
+
+  if (originalMime === 'image/gif' || originalMime === 'image/svg+xml') {
+    return "data:" + originalMime + ";base64," + buffer.toString("base64");
+  }
+
+  try {
+    const sharp = (await import('sharp')).default;
+    const meta = await sharp(buffer).metadata();
+    const width = meta.width ?? 0;
+    const height = meta.height ?? 0;
+    const isLarge = width > maxDim || height > maxDim || buffer.length > 200 * 1024;
+
+    if (isLarge || originalMime === 'image/png') {
+      const optimized = await sharp(buffer)
+        .resize(maxDim, maxDim, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality, progressive: true })
+        .toBuffer();
+      return "data:image/jpeg;base64," + optimized.toString("base64");
+    }
+  } catch (err) {
+    console.warn('Failed to optimize image with sharp:', err);
+  }
+
+  return "data:" + originalMime + ";base64," + buffer.toString("base64");
 }

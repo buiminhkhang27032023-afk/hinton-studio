@@ -419,21 +419,42 @@ export async function runStudioNode(
   const publicEntries = taggedImages.filter((entry) => /^https?:\/\//i.test(entry.url)).slice(0, 9);
   const publicImageUrls = publicEntries.map((entry) => entry.url);
   const tagRemap = new Map(publicEntries.map((entry, newIndex) => [entry.tag, newIndex + 1]));
+  
+  // For multimodal vision models (Gemini), map @Ảnh1 -> Ảnh 1 (Image 1) so the LLM clearly understands the reference
   const taggedPrompt = prompt.replace(/@Ảnh(\d+)/g, (match, numStr) => {
-    const mapped = tagRemap.get(Number(numStr));
-    return mapped ? `@image${mapped}` : match;
+    if (kind === "video" && publicEntries.length > 0) {
+      const mapped = tagRemap.get(Number(numStr));
+      return mapped ? `@image${mapped}` : match;
+    }
+    return `Ảnh ${numStr} (Image ${numStr})`;
   });
   const aspect = (data.aspect as string | undefined) ?? "16:9";
 
+  const allImages = inputs.images.length > 0 ? inputs.images : (sourceImage ? [sourceImage] : []);
+  const inlineImages = isIooai ? allImages : await Promise.all(allImages.map(toDataUri));
+
+  let chosenModelId = String(data.modelId);
+  // Auto-route to multimodal vision model if user connected reference images to a text-only image model
+  if (kind === "image" && allImages.length > 0) {
+    if (chosenModelId === "req/gpt-image-2" || chosenModelId === "seed:image:gpt-image" || chosenModelId === "iooai:gpt-image-2-4k") {
+      chosenModelId = "req/gemini-3.0-pro-image";
+    }
+  }
+
   const response = await api.run({
-    modelId: String(data.modelId),
+    modelId: chosenModelId,
     kind,
     projectId,
     nodeId: node.id,
     vars: {
       prompt: `${taggedPrompt}${continuitySuffix(data)}`,
       image: inlineImage,
-      images: isIooai ? (inputs.images.length ? inputs.images : sourceImage ? [sourceImage] : []) : inputs.images,
+      images: isIooai ? allImages : inlineImages,
+      modelImage: inputs.modelImage ? await toDataUri(inputs.modelImage) : inlineImages[0],
+      garmentImage: inputs.garmentImage ? await toDataUri(inputs.garmentImage) : inlineImages[1],
+      video: inputs.videoUrl ?? (data.videoUrl as string | undefined),
+      videoUrl: inputs.videoUrl ?? (data.videoUrl as string | undefined),
+      workflowId: (data.workflowId as string | undefined) ?? "",
       duration: data.duration ?? 5,
       aspect,
       size: sizeFor(aspect, kind === "video" ? "video" : "image"),

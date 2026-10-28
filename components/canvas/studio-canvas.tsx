@@ -41,15 +41,43 @@ import {
   Copy,
   Trash2,
   Minus,
+  AlignLeft,
+  Video,
+  AudioLines,
+  Box,
+  Film,
+  FolderInput,
+  LayoutGrid,
   Undo2,
   Redo2,
   Upload,
   Bot,
   PlugZap,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  FolderKanban,
+  Users,
+  Share2,
+  History,
+  MessageSquare,
+  LayoutTemplate,
+  FolderOpen,
+  HelpCircle,
+  Maximize2,
+  Spline,
+  Zap,
+  MousePointer2,
+  Hand,
+  X,
 } from "lucide-react";
 import clsx from "clsx";
+import { LogoMark } from "@/components/brand/logo";
+import Link from "next/link";
 import { CanvasCopilot } from "@/components/canvas/canvas-copilot";
 import { ApiGatewaysModal } from "@/components/canvas/api-gateways-modal";
+import { ScriptDirectorModal } from "@/components/canvas/script-director-modal";
+import type { ProductionPlan } from "@/app/api/script-director/route";
 import { api } from "@/lib/api-client";
 import { useStudio } from "@/lib/studio-store";
 import { useUi } from "@/lib/ui-store";
@@ -58,6 +86,7 @@ import type { ProjectSummary } from "@/lib/types";
 import { Spinner } from "@/components/ui/primitives";
 import { NODE_TYPES } from "./nodes";
 import { Inspector } from "./inspector";
+import { MediaLightbox } from "@/components/ui/media-lightbox";
 import { NodeMenuContext, RunNodeContext } from "./run-context";
 import { StudioConnectionLine, StudioEdge } from "./studio-edge";
 import {
@@ -115,16 +144,22 @@ function minimapColor(): string {
 }
 
 const NODE_LIBRARY = [
-  { type: "prompt", icon: Type, label: "Câu lệnh", hint: "Văn bản mô tả", accent: "text-violet-soft" },
-  { type: "prompt_master", icon: Sparkles, label: "Trợ lý Bậc Thầy", hint: "Tối ưu hóa câu lệnh AI", accent: "text-amber-300" },
-  { type: "image", icon: ImageIcon, label: "Ảnh nguồn", hint: "Tải ảnh lên", accent: "text-sky-300" },
-  { type: "fashion_tryon", icon: Shirt, label: "Thử đồ AI", hint: "Ghép người + đồ", accent: "text-rose-300" },
-  { type: "fashion_compose", icon: SplitSquareVertical, label: "Ghép Lookbook", hint: "Video chia 60:40 (9:16)", accent: "text-amber-300" },
-  { type: "generate", icon: Wand2, label: "Tạo ảnh", hint: "Text → ảnh", accent: "text-brass-300", data: { modelKind: "image" } },
-  { type: "generate", icon: Play, label: "Tạo video", hint: "Ảnh/chữ → video", accent: "text-brass-300", data: { modelKind: "video" } },
-  { type: "upscale", icon: ZoomIn, label: "Upscale", hint: "Làm nét ảnh", accent: "text-emerald-300" },
-  { type: "train", icon: BrainCircuit, label: "Train model", hint: "Dạy AI bằng ảnh mẫu", accent: "text-fuchsia-300" },
-  { type: "result", icon: Check, label: "Kết quả", hint: "Xem trước & tải về", accent: "text-emerald-300" },
+  // 1. Nhóm cốt lõi (Core Types - chuẩn Tapnow)
+  { type: "prompt", icon: AlignLeft, label: "Văn bản", hint: "Kịch bản, nội dung quảng cáo, văn bản…", section: "core" },
+  { type: "generate", icon: ImageIcon, label: "Hình ảnh", hint: "Tạo ảnh từ câu lệnh, phác thảo…", section: "core", data: { modelKind: "image" } },
+  { type: "generate", icon: Video, label: "Video", hint: "Tạo video AI, hoạt cảnh, catwalk…", section: "core", data: { modelKind: "video" } },
+  { type: "audio", icon: AudioLines, label: "Âm thanh", hint: "Lồng tiếng, nhạc nền, âm thanh…", section: "core" },
+  { type: "3d", icon: Box, label: "3D", hint: "Mô hình 3D, camera không gian…", section: "core" },
+
+  // 2. Tiện ích (Utilities)
+  { type: "group", icon: Layers, label: "Gom nhóm (Group)", hint: "Tạo khung gom nhóm các khối gọn gàng", section: "utility" },
+  { type: "fashion_tryon", icon: Shirt, label: "Thử đồ thời trang", hint: "Thử đồ AI, phối trang phục", section: "utility" },
+  { type: "fashion_compose", icon: SplitSquareVertical, label: "Ghép Lookbook", hint: "Video chia khung hình 60:40 (9:16)", section: "utility" },
+  { type: "timeline", icon: Film, label: "Trình chỉnh sửa dòng thời gian", hint: "Ghép nối timeline video", section: "utility", badge: "Bản Beta" },
+  { type: "prompt_master", icon: Clapperboard, label: "Đạo diễn Kịch bản Flova", hint: "Phân cảnh video, kịch bản tự động", section: "utility" },
+
+  // 3. Thêm nguồn (Sources)
+  { type: "upload", icon: Upload, label: "Tải lên", hint: "Tải ảnh hoặc video từ máy tính", section: "source" },
 ] as const;
 
 type LibItem = (typeof NODE_LIBRARY)[number];
@@ -154,22 +189,36 @@ function defaultData(type: string, extra?: Record<string, unknown>): StudioNodeD
   if (type === "train") return { ...base, name: "model-cua-toi", steps: 1000 };
   if (type === "fashion_tryon") return { ...base, prompt: "", modelId: "seed:image:gemini-compose" };
   if (type === "fashion_compose") return { ...base, headline: "HÃY NHỚ", subheadline: "Bí quyết phối đồ" };
+  if (type === "group") return { ...base, label: "New Group", width: 360, height: 260 };
+  if (type === "audio") return { ...base, text: "Giọng đọc truyền cảm, âm thanh sống động…", name: "Âm thanh" };
+  if (type === "3d") return { ...base, text: "3D camera orbit 360 degree, depth scene…", name: "Studio 3D" };
   return base;
 }
 
 function CanvasInner({ project }: { project: ProjectSummary }) {
-  const { tr, toast } = useUi();
+  const { tr, toast, openLightbox } = useUi();
   const [nodes, setNodes, onNodesChange] = useNodesState<StudioNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
+  const [inspectedId, setInspectedId] = useState<string | null>(null);
+  const [mouseMode, setMouseMode] = useState<"select" | "pan">("select");
+  const [edgeCurve, setEdgeCurve] = useState<ConnectionLineType>(ConnectionLineType.Bezier);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    nodeId?: string;
+    isSelection?: boolean;
+    isPane?: boolean;
+  } | null>(null);
   const [addMenu, setAddMenu] = useState<AddMenuState | null>(null);
   const [linkDrag, setLinkDrag] = useState<LinkDrag | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [runningAll, setRunningAll] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [gatewaysModalOpen, setGatewaysModalOpen] = useState(false);
+  const [scriptDirectorOpen, setScriptDirectorOpen] = useState(false);
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
   const nodesRef = useRef(nodes);
@@ -261,6 +310,31 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         e.preventDefault();
         e.stopPropagation();
         redo();
+      } else if (modifier && e.key.toLowerCase() === "g" && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        groupSelected();
+      } else if (modifier && e.key.toLowerCase() === "g" && e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectedIds.length === 1 && nodes.find((n) => n.id === selectedIds[0])?.type === "group") {
+          ungroupSelected(selectedIds[0]);
+        }
+      } else if (modifier && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        e.stopPropagation();
+        setToolbarCollapsed((v) => !v);
+      } else if (!modifier && !e.altKey) {
+        if (e.key.toLowerCase() === "v") {
+          setMouseMode("select");
+        } else if (e.key.toLowerCase() === "h") {
+          setMouseMode("pan");
+        } else if (e.key === "Escape") {
+          setSelectedIds([]);
+          setSelectedId(null);
+          setMenu(null);
+          setAddMenu(null);
+        }
       }
     };
 
@@ -288,9 +362,99 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     [onEdgesChange, pushSnapshot],
   );
 
+  useEffect(() => {
+    if (selectedId) {
+      const node = nodesRef.current.find((n) => n.id === selectedId);
+      if (node && node.type !== "group") {
+        setInspectedId(selectedId);
+      }
+    }
+  }, [selectedId]);
+
   const onNodeDragStart = useCallback(() => {
     pushSnapshot();
   }, [pushSnapshot]);
+
+  const onNodeDragStop = useCallback(
+    (_: any, draggedNode: StudioNode) => {
+      // Don't auto-group the group container itself
+      if (draggedNode.type === "group") return;
+
+      setNodes((current) => {
+        const groups = current.filter((n) => n.type === "group");
+        if (groups.length === 0) return current;
+
+        const node = current.find((n) => n.id === draggedNode.id);
+        if (!node) return current;
+
+        // 1. If node currently belongs to a group:
+        if (node.parentId) {
+          const parentGroup = groups.find((g) => g.id === node.parentId);
+          if (parentGroup) {
+            const gW = (parentGroup.data as any)?.width ?? 360;
+            const gH = (parentGroup.data as any)?.height ?? 260;
+            const isOutside =
+              node.position.x < -30 ||
+              node.position.y < -30 ||
+              node.position.x > gW + 30 ||
+              node.position.y > gH + 30;
+
+            if (isOutside) {
+              const absX = parentGroup.position.x + node.position.x;
+              const absY = parentGroup.position.y + node.position.y;
+              toast(`Đã đưa khối ra khỏi nhóm "${(parentGroup.data as any)?.label || "Group"}"`, "default");
+              return current.map((n) => {
+                if (n.id === node.id) {
+                  const { parentId, extent, ...rest } = n;
+                  return { ...rest, position: { x: absX, y: absY } };
+                }
+                return n;
+              });
+            }
+          }
+          return current;
+        }
+
+        // 2. If node is currently free (no parent): check if dropped inside any group
+        const nodeX = node.position.x;
+        const nodeY = node.position.y;
+        for (const group of groups) {
+          const gX = group.position.x;
+          const gY = group.position.y;
+          const gW = (group.data as any)?.width ?? 360;
+          const gH = (group.data as any)?.height ?? 260;
+
+          if (nodeX >= gX - 20 && nodeX <= gX + gW - 30 && nodeY >= gY - 20 && nodeY <= gY + gH - 30) {
+            const localX = Math.max(16, nodeX - gX);
+            const localY = Math.max(36, nodeY - gY);
+            const neededW = Math.max(gW, localX + 260 + 24);
+            const neededH = Math.max(gH, localY + 200 + 24);
+
+            toast(`Đã gom khối vào "${(group.data as any)?.label || "New Group"}"!`, "success");
+
+            return current.map((n) => {
+              if (n.id === group.id) {
+                return { ...n, data: { ...n.data, width: neededW, height: neededH } };
+              }
+              if (n.id === node.id) {
+                return {
+                  ...n,
+                  parentId: group.id,
+                  extent: "parent" as const,
+                  position: { x: localX, y: localY },
+                };
+              }
+              return n;
+            });
+          }
+        }
+
+        return current;
+      });
+    },
+    [setNodes, toast],
+  );
+
 
 
   /* ------------------------------ persistence ----------------------------- */
@@ -312,6 +476,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     };
   }, [project.id, setEdges, setNodes]);
 
+  const lastSavedRef = useRef<string>("");
   const persist = useCallback(() => {
     setSaveState("saving");
     const payload = {
@@ -320,6 +485,8 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         type: node.type,
         position: node.position,
         data: node.data,
+        parentId: node.parentId,
+        extent: node.extent,
       })),
       edges: edges.map((edge) => ({
         id: edge.id,
@@ -331,6 +498,12 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       })),
       viewport: getViewport(),
     };
+    const signature = JSON.stringify({ n: payload.nodes, e: payload.edges });
+    if (signature === lastSavedRef.current) {
+      setSaveState("idle");
+      return;
+    }
+    lastSavedRef.current = signature;
     api.projects
       .saveGraph(project.id, payload as never)
       .then(() => {
@@ -344,22 +517,27 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   const persistRef = useRef(persist);
   persistRef.current = persist;
 
-  // Debounced autosave with immediate flush on unmount or tab switch
+  // Debounced autosave. The old cleanup flushed a save on EVERY nodes/edges
+  // change (drag frame, selection, resize), firing a PUT per interaction and
+  // freezing the canvas. Now: only debounce here; flush once on real unmount.
   useEffect(() => {
     if (!loaded) return;
     dirtyRef.current = true;
     const timer = setTimeout(() => {
-      persist();
       dirtyRef.current = false;
-    }, 900);
+      persistRef.current();
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [nodes, edges, loaded]);
+
+  useEffect(() => {
     return () => {
-      clearTimeout(timer);
       if (dirtyRef.current) {
-        persistRef.current();
         dirtyRef.current = false;
+        persistRef.current();
       }
     };
-  }, [nodes, edges, loaded, persist]);
+  }, []);
 
   // Flush on visibilitychange (when user switches browser tabs)
   useEffect(() => {
@@ -385,6 +563,28 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
           x: (wrapper.current?.clientWidth ?? 900) / 2 - 140 + Math.random() * 80,
           y: (wrapper.current?.clientHeight ?? 700) / 2 - 100 + Math.random() * 60,
         });
+      if (type === "group") {
+        const groupId = `group_${Math.random().toString(36).slice(2, 10)}`;
+        const groupNode: StudioNode = {
+          id: groupId,
+          type: "group",
+          position: spot,
+          zIndex: -1,
+          selected: true,
+          data: {
+            label: (extra as any)?.label || "New Group",
+            width: (extra as any)?.width || 360,
+            height: (extra as any)?.height || 260,
+            color: "#ffffff",
+            ...extra,
+          } as unknown as StudioNodeData,
+        };
+        setNodes((current) => [groupNode, ...current]);
+        setSelectedId(groupId);
+        setSelectedIds([groupId]);
+        return groupId;
+      }
+
       setNodes((current) => [
         ...current,
         {
@@ -636,18 +836,28 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       type: "group",
       position: anchor,
       zIndex: -1,
-      data: { label: "Nhóm mới", width: groupWidth, height: groupHeight } as unknown as StudioNodeData,
+      selected: true,
+      data: { label: "New Group", width: groupWidth, height: groupHeight, color: "#ffffff" } as unknown as StudioNodeData,
     };
 
     setNodes((current) => [
       groupNode,
       ...current.map((n) => {
         const place = placements.get(n.id);
-        if (!place) return n;
-        return { ...n, parentId: groupId, extent: "parent" as const, position: place };
+        if (!place) return { ...n, selected: false };
+        return {
+          ...n,
+          parentId: groupId,
+          extent: "parent" as const,
+          position: place,
+          selected: false,
+        };
       }),
     ]);
-  }, [nodes, selectedIds, setNodes, getViewport]);
+    setSelectedId(groupId);
+    setSelectedIds([groupId]);
+    toast(`Đã gom ${selected.length} khối thành nhóm gọn gàng!`, "success");
+  }, [nodes, selectedIds, setNodes, getViewport, toast]);
 
   /* --------------------------------- run ---------------------------------- */
 
@@ -731,6 +941,41 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     [setNodes],
   );
 
+  const duplicateSelected = useCallback(() => {
+    pushSnapshot();
+    const copies: StudioNode[] = [];
+    for (const id of selectedIds) {
+      const source = nodes.find((n) => n.id === id);
+      if (!source || source.type === "group") continue;
+      copies.push({
+        ...source,
+        id: `${source.type}_${Math.random().toString(36).slice(2, 9)}`,
+        position: { x: source.position.x + 32, y: source.position.y + 32 },
+        selected: true,
+        data: { ...source.data },
+      });
+    }
+    if (copies.length > 0) {
+      setNodes((current) => [...current.map((n) => ({ ...n, selected: false })), ...copies]);
+      setSelectedIds(copies.map((c) => c.id));
+      setSelectedId(copies[0].id);
+      toast(`Đã nhân bản ${copies.length} khối`, "success");
+    }
+  }, [nodes, pushSnapshot, selectedIds, setNodes, toast]);
+
+  const deleteSelected = useCallback(() => {
+    if (selectedIds.length === 0) return;
+    pushSnapshot();
+    const idSet = new Set(selectedIds);
+    setNodes((current) => current.filter((n) => !idSet.has(n.id)));
+    setEdges((current) => current.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)));
+    const count = selectedIds.length;
+    setSelectedIds([]);
+    setSelectedId(null);
+    setMenu(null);
+    toast(`Đã xoá ${count} khối`, "default");
+  }, [pushSnapshot, selectedIds, setEdges, setNodes, toast]);
+
   const duplicateNode = useCallback(
     (nodeId: string) => {
       pushSnapshot();
@@ -806,13 +1051,24 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   }, [edges, nodes, runNode, setNodes, toast, tr]);
 
   const runSelected = useCallback(async () => {
-    if (!selectedId) return;
-    try {
-      await runNode(selectedId);
-    } catch (error) {
-      toast(error instanceof Error ? error.message : "Lỗi", "error");
+    const ids = selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
+    if (ids.length === 0) return;
+    const targets = nodes.filter((n) => ids.includes(n.id) && !["prompt", "image", "result"].includes(n.type ?? ""));
+    const order = topoSort(targets, edges);
+    let failures = 0;
+    for (const node of order) {
+      try {
+        await runNode(node.id);
+      } catch {
+        failures++;
+      }
     }
-  }, [runNode, selectedId, toast]);
+    if (failures > 0) {
+      toast(`Hoàn tất với ${failures} khối lỗi`, "error");
+    } else if (targets.length > 0) {
+      toast(tr("toast.generated"), "success");
+    }
+  }, [edges, nodes, runNode, selectedId, selectedIds, toast, tr]);
 
   const loadFashionTemplate = useCallback(() => {
     pushSnapshot();
@@ -984,6 +1240,120 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     setTimeout(() => fitView({ padding: 0.25, duration: 400 }), 100);
   }, [fitView, setEdges, setNodes, toast]);
 
+  const handleApplyProductionPlan = useCallback(
+    (plan: ProductionPlan) => {
+      pushSnapshot();
+
+      const templateNodes: StudioNode[] = [];
+      const templateEdges: Edge[] = [];
+
+      // 1. Script Master Node
+      templateNodes.push({
+        id: "script_master_flova",
+        type: "prompt",
+        position: { x: 340, y: 40 },
+        data: {
+          text: `[KỊCH BẢN FLOVA]: ${plan.project_analysis.title}\nThể loại: ${plan.project_analysis.genre} | ${plan.project_analysis.target_duration_sec}s | ${plan.project_analysis.recommended_aspect}\nModel đề xuất: ${plan.project_analysis.recommended_model}\n\n${plan.master_prompt_unified}`,
+        },
+      });
+
+      // 2. Character / Asset Image nodes
+      const charAssets = (plan.entities.characters || []).filter((c) => c.matched_asset_url);
+      const outfitAssets = (plan.entities.outfits || []).filter((o) => o.matched_asset_url);
+      const combinedAssets = [...charAssets, ...outfitAssets];
+
+      if (combinedAssets.length === 0) {
+        templateNodes.push({
+          id: "char_anchor_ref",
+          type: "image",
+          position: { x: 40, y: 220 },
+          data: { name: plan.entities.characters?.[0]?.name || "Nhân vật chính", status: "idle" },
+        });
+      } else {
+        combinedAssets.forEach((asset, idx) => {
+          templateNodes.push({
+            id: `char_ref_${idx + 1}`,
+            type: "image",
+            position: { x: 40, y: 160 + idx * 240 },
+            data: {
+              name: asset.name,
+              imageUrl: (asset as any).matched_asset_url,
+              status: "idle",
+            },
+          });
+        });
+      }
+
+      // 3. Shots & Video Nodes
+      const shots = plan.shots && plan.shots.length > 0 ? plan.shots : [];
+      const primaryCharId = templateNodes.find((n) => n.type === "image")?.id || "char_anchor_ref";
+
+      shots.forEach((shot, idx) => {
+        const promptNodeId = `shot_${shot.shot_index}_prompt`;
+        const genNodeId = `shot_${shot.shot_index}_video`;
+        const yPos = 180 + idx * 240;
+
+        // Prompt Node for this shot
+        templateNodes.push({
+          id: promptNodeId,
+          type: "prompt",
+          position: { x: 340, y: yPos },
+          data: {
+            text: `[Cảnh ${shot.shot_index} (${shot.time_range})]: ${shot.title || shot.character_action}\nBố cục: ${shot.framing} | Camera: ${shot.camera_movement} | Chuyển cảnh: ${shot.transition_out}\n\n${shot.prompt_en}`,
+          },
+        });
+
+        // Generate Node for this shot
+        templateNodes.push({
+          id: genNodeId,
+          type: "generate",
+          position: { x: 680, y: yPos },
+          data: {
+            modelKind: "video",
+            modelId: plan.project_analysis.recommended_model || "iooai:omni_flash_10s",
+            aspect: plan.project_analysis.recommended_aspect || "9:16",
+            duration: shot.duration_sec || 5,
+            resolution: "720p",
+            prompt: shot.prompt_en,
+            status: "idle",
+          },
+        });
+
+        // Edges: image -> video, prompt -> video
+        templateEdges.push({
+          id: `e-ref-${shot.shot_index}`,
+          source: primaryCharId,
+          target: genNodeId,
+        });
+        templateEdges.push({
+          id: `e-prompt-${shot.shot_index}`,
+          source: promptNodeId,
+          target: genNodeId,
+        });
+        // Connect video -> master output
+        templateEdges.push({
+          id: `e-video-${shot.shot_index}-out`,
+          source: genNodeId,
+          target: "flova_final_output",
+        });
+      });
+
+      // 4. Final Output Result Node
+      templateNodes.push({
+        id: "flova_final_output",
+        type: "result",
+        position: { x: 1020, y: 300 },
+        data: { status: "idle" },
+      });
+
+      setNodes(templateNodes);
+      setEdges(templateEdges.map((edge) => decorateEdge(edge, templateNodes)));
+      toast(`Đã đưa kế hoạch phân cảnh "${plan.project_analysis.title}" vào Canvas!`, "success");
+      setTimeout(() => fitView({ padding: 0.25, duration: 400 }), 100);
+    },
+    [pushSnapshot, setNodes, setEdges, toast, fitView],
+  );
+
 
   /* ---------------------- upload & clipboard paste ----------------------- */
 
@@ -1010,48 +1380,10 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       }
 
       pushSnapshot();
-      const basePos = customPosition ?? getCenterFlowPosition();
 
-      // If exactly 1 file and an image node is currently selected, update that node directly!
-      if (validFiles.length === 1 && selectedId) {
-        const selNode = nodesRef.current.find((n) => n.id === selectedId);
-        if (selNode && selNode.type === "image") {
-          const file = validFiles[0];
-          const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(file.name);
-          patchNode(selectedId, { status: "running" });
-          try {
-            const asset = await api.assets.upload(file, project.id);
-            if (isVideo) {
-              patchNode(selectedId, {
-                videoUrl: asset.url,
-                imageUrl: undefined,
-                result: asset,
-                name: file.name,
-                status: "done",
-              });
-              toast(`Đã tải lên video: ${file.name}`, "success");
-            } else {
-              patchNode(selectedId, {
-                imageUrl: asset.url,
-                videoUrl: undefined,
-                result: asset,
-                name: file.name,
-                status: "done",
-              });
-              toast(`Đã tải lên ảnh: ${file.name}`, "success");
-            }
-          } catch (err) {
-            patchNode(selectedId, {
-              status: "error",
-              error: err instanceof Error ? err.message : "Tải lên thất bại",
-            });
-            toast(err instanceof Error ? err.message : "Tải lên thất bại", "error");
-          }
-          return;
-        }
-      }
-
-      // Otherwise, create new nodes for each file!
+      // Always create a new node when pasting or uploading (never overwrite existing selected node)
+      const selNode = selectedId ? nodesRef.current.find((n) => n.id === selectedId) : null;
+      const basePos = customPosition ?? (selNode ? { x: selNode.position.x + 30, y: selNode.position.y + 30 } : getCenterFlowPosition());
       for (let i = 0; i < validFiles.length; i++) {
         const file = validFiles[i];
         const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(file.name);
@@ -1210,14 +1542,104 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     [runNode, toast],
   );
 
+  const handleReuseMedia = useCallback(
+    (url: string, kind?: "image" | "video") => {
+      const isVid = kind === "video" || /\.(mp4|webm|mov)(\?|$)/i.test(url);
+      const name = isVid ? "Video dùng lại" : "Ảnh dùng lại";
+      const targetId = inspectedId || selectedId;
+      const activeNode = targetId ? nodes.find((n) => n.id === targetId) : null;
+      let spot: { x: number; y: number } | undefined;
+      if (activeNode) {
+        spot = {
+          x: activeNode.position.x + 280,
+          y: activeNode.position.y,
+        };
+      }
+      const newId = addNode("image", spot, {
+        imageUrl: isVid ? undefined : url,
+        videoUrl: isVid ? url : undefined,
+        name,
+        status: "done",
+        result: {
+          id: `reused_${Date.now()}`,
+          kind: isVid ? "video" : "image",
+          url,
+          name,
+          createdAt: new Date().toISOString(),
+        },
+      });
+      toast(`Đã tạo khối nguồn mới từ ${isVid ? "video" : "ảnh"}!`, "success");
+      return newId;
+    },
+    [addNode, inspectedId, selectedId, nodes, toast],
+  );
+
+  const reuseNode = useCallback(
+    (nodeId: string) => {
+      const target = nodes.find((n) => n.id === nodeId);
+      if (!target) return;
+      const data = target.data as StudioNodeData;
+      const url = data.result?.url || data.imageUrl || data.videoUrl;
+      const kind = data.result?.kind || (data.videoUrl ? "video" : "image");
+      if (!url) {
+        toast("Khối này chưa có hình ảnh hoặc video để dùng lại", "default");
+        return;
+      }
+      const isVid = kind === "video" || /\.(mp4|webm|mov)(\?|$)/i.test(url);
+      const spot = {
+        x: target.position.x + 280,
+        y: target.position.y,
+      };
+      const name = `Dùng lại: ${target.data?.name || (isVid ? "Video" : "Ảnh")}`;
+      addNode("image", spot, {
+        imageUrl: isVid ? undefined : url,
+        videoUrl: isVid ? url : undefined,
+        name,
+        status: "done",
+        result: {
+          id: `reused_${Date.now()}`,
+          kind: isVid ? "video" : "image",
+          url,
+          name,
+          createdAt: new Date().toISOString(),
+        },
+      });
+      toast(`Đã tạo khối nguồn mới từ ${isVid ? "video" : "ảnh"}!`, "success");
+    },
+    [addNode, nodes, toast],
+  );
+
   const nodeMenu = useMemo(
-    () => ({ duplicate: duplicateNode, remove: deleteNode }),
-    [duplicateNode, deleteNode],
+    () => ({ duplicate: duplicateNode, remove: deleteNode, reuse: reuseNode }),
+    [duplicateNode, deleteNode, reuseNode],
   );
 
   const placeFromMenu = useCallback(
     (item: LibItem) => {
       if (!addMenu) return;
+      if (item.type === "upload") {
+        setAddMenu(null);
+        const input = document.createElement("input");
+        input.type = "file";
+        input.multiple = true;
+        input.accept = "image/*,video/*";
+        input.onchange = (e) => {
+          const files = (e.target as HTMLInputElement).files;
+          if (files && files.length > 0) handleUploadFiles(Array.from(files), addMenu.flow);
+        };
+        input.click();
+        return;
+      }
+      if (item.type === "timeline") {
+        setAddMenu(null);
+        setScriptDirectorOpen(true);
+        return;
+      }
+      if (item.type === "group") {
+        addNode("group", addMenu.flow, { label: "New Group", width: 360, height: 260 });
+        setAddMenu(null);
+        return;
+      }
       const extra = itemData(item);
       const connect = addMenu.connect;
       const position = connect
@@ -1281,22 +1703,21 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     return NODE_LIBRARY.filter((item) => kindsCompatible(outputKind(item.type, itemData(item)), accepted));
   }, [addMenu, nodes]);
 
-  const selectedNode = useMemo(() => {
-    const node = nodes.find((n) => n.id === selectedId) ?? null;
+  const inspectedNode = useMemo(() => {
+    const targetId = inspectedId || selectedId;
+    if (!targetId) return null;
+    const node = nodes.find((n) => n.id === targetId) ?? null;
     // Group boxes are a pure visual container — nothing in them to inspect/run.
     return node?.type === "group" ? null : node;
-  }, [nodes, selectedId]);
+  }, [nodes, inspectedId, selectedId]);
+
+  const selectedNode = inspectedNode;
 
   const hasKey = useStudio((s) => s.hasKey);
 
   return (
     <div className="relative h-full min-h-0 bg-black">
-        <header className="pointer-events-none absolute left-3 top-3 z-20 flex items-center gap-2">
-          <h1 className="pointer-events-auto truncate text-[13px] text-white/80">{project.name}</h1>
-          <span className="text-[10px] text-white/40">
-            {saveState === "saving" ? tr("common.saving") : saveState === "saved" ? tr("common.saved") : ""}
-          </span>
-        </header>
+{/* Top floating header panels rendered inside ReactFlow */}
 
         {!hasKey && (
           <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-3 rounded-full border border-amber-900/50 bg-amber-950/80 px-3 py-1.5 text-[12px] text-amber-200">
@@ -1327,6 +1748,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
             onNodeDragStart={onNodeDragStart}
+            onNodeDragStop={onNodeDragStop}
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
@@ -1341,7 +1763,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             onSelectionChange={onSelectionChange}
             nodeTypes={NODE_TYPES}
             edgeTypes={EDGE_TYPES}
-            connectionLineType={ConnectionLineType.Bezier}
+            connectionLineType={edgeCurve}
             connectionLineComponent={StudioConnectionLine}
             connectionRadius={48}
             reconnectRadius={24}
@@ -1354,16 +1776,31 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
             colorMode="dark"
             onlyRenderVisibleElements
+            elevateNodesOnSelect={false}
             zoomOnDoubleClick={false}
             onNodeDoubleClick={(_event, node) => runNode(node.id).catch(() => {})}
             onNodeContextMenu={(event, node) => {
               event.preventDefault();
               setAddMenu(null);
-              setMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
+              if (selectedIds.length >= 2 && selectedIds.includes(node.id)) {
+                setMenu({ x: event.clientX, y: event.clientY, isSelection: true });
+              } else {
+                setMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
+              }
+            }}
+            onSelectionContextMenu={(event) => {
+              event.preventDefault();
+              setAddMenu(null);
+              setMenu({ x: event.clientX, y: event.clientY, isSelection: true });
             }}
             onPaneContextMenu={(event) => {
               event.preventDefault();
-              openAddAt(event.clientX, event.clientY);
+              setAddMenu(null);
+              if (selectedIds.length >= 2) {
+                setMenu({ x: event.clientX, y: event.clientY, isSelection: true });
+              } else {
+                setMenu({ x: event.clientX, y: event.clientY, isPane: true });
+              }
             }}
             onPaneClick={(event) => {
               if (ignorePaneClick.current) return;
@@ -1377,44 +1814,103 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
               lastPaneClick.current = now;
               setAddMenu(null);
             }}
-            onMove={() => setMenu(null)}
+            onMoveStart={() => setMenu(null)}
             deleteKeyCode={["Backspace", "Delete"]}
-            panOnDrag
-            selectionOnDrag={false}
-            selectionKeyCode="Shift"
+            panOnDrag={mouseMode === "select" ? [1, 2] : true}
+            selectionOnDrag={mouseMode === "select"}
             selectionMode={SelectionMode.Partial}
-            className="bg-black"
+            selectionKeyCode={mouseMode === "select" ? null : "Shift"}
+            panActivationKeyCode="Space"
+            paneClickDistance={6}
+            className={clsx("bg-black", mouseMode === "pan" ? "cursor-grab active:cursor-grabbing" : "")}
           >
             <ConnectHint />
-            <ZoomBar />
-            <MiniMap
-              pannable
-              zoomable
-              position="bottom-right"
-              className="!overflow-hidden !rounded-xl !border !border-white/10 !bg-[#101014]/95 !shadow-xl"
-              style={{ width: 148, height: 96 }}
-              nodeColor={minimapColor}
-              maskColor="rgba(8,8,10,.62)"
-            />
-            <Panel position="bottom-center" className="!mb-3">
-              <div className="flex items-center gap-1 rounded-full border border-white/10 bg-[#16161c]/95 p-1 shadow-[0_16px_40px_-16px_rgba(0,0,0,.85)] backdrop-blur">
+
+            {/* 1. Top-Left Floating Project Pill (Image 1 & 2) */}
+            <Panel position="top-left" className="!top-3 !left-3 z-30">
+              <Link
+                href="/"
+                className="flex items-center gap-2 rounded-full border border-white/15 bg-[#121217]/95 px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-2xl backdrop-blur-md hover:bg-white/10 transition"
+                title="Quay về Trang chủ Dashboard"
+              >
+                <LogoMark size={20} animated={false} />
+                <span className="max-w-[220px] truncate">{project.name || "HINTON Studio"}</span>
+                <ChevronDown size={13} className="text-neutral-400" />
+              </Link>
+            </Panel>
+
+            {/* 2. Top-Right Floating Controls (Image 1 & 2) */}
+            <Panel position="top-right" className="!top-3 !right-3 z-30">
+              <div className="flex items-center gap-2">
+                {/* API Gateways */}
+                <button
+                  type="button"
+                  onClick={() => setGatewaysModalOpen(true)}
+                  title="Cổng API (IOOAI / Seedance / Kling / Flux)"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#121217]/95 text-neutral-300 hover:text-white hover:bg-white/10 shadow-xl backdrop-blur-md transition"
+                >
+                  <PlugZap size={14} />
+                </button>
+
+                {/* Credits */}
+                <div className="flex items-center gap-1.5 rounded-full border border-white/15 bg-[#121217]/95 px-3 py-1.5 text-[12px] font-semibold text-amber-300 shadow-xl backdrop-blur-md">
+                  <span>🪙</span>
+                  <span>1.250</span>
+                </div>
+
+                {/* Community */}
+                <Link
+                  href="/"
+                  className="flex items-center gap-1.5 rounded-full border border-white/15 bg-[#121217]/95 px-3 py-1.5 text-[12px] font-medium text-neutral-200 hover:text-white hover:bg-white/10 shadow-xl backdrop-blur-md transition"
+                >
+                  <Users size={13} />
+                  <span>Community</span>
+                </Link>
+
+                {/* Share */}
+                <button
+                  type="button"
+                  onClick={() => toast("Đã sao chép liên kết chia sẻ dự án!", "success")}
+                  title="Chia sẻ dự án"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#121217]/95 text-neutral-300 hover:text-white hover:bg-white/10 shadow-xl backdrop-blur-md transition"
+                >
+                  <Share2 size={13} />
+                </button>
+              </div>
+            </Panel>
+
+            {/* 3. Left Vertical Floating Pill Dock (Image 1 & 2) */}
+            <Panel position="top-left" className="!top-14 !left-3 z-20">
+              <div className="flex flex-col items-center gap-2 rounded-full border border-white/15 bg-[#121217]/95 p-1.5 shadow-2xl backdrop-blur-md">
+                {/* Quick Add Node: White Circle Button */}
                 <button
                   type="button"
                   onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
-                    openAddAt(rect.left, rect.top - 12);
+                    openAddAt(rect.right + 12, rect.top);
                   }}
-                  className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[12.5px] font-medium text-ink-950"
+                  title="Thêm khối mới (+)"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-black hover:bg-neutral-200 transition shadow-md"
                 >
-                  <Plus size={14} />
-                  {tr("canvas.add")}
+                  <Plus size={16} strokeWidth={2.4} />
                 </button>
-                <label
-                  title="Tải ảnh hoặc video từ máy tính (hoặc kéo thả / Ctrl+V)"
-                  className="flex cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium text-emerald-300 transition hover:bg-white/10"
+
+                {/* Search */}
+                <button
+                  type="button"
+                  onClick={() => fitView({ padding: 0.25, duration: 400 })}
+                  title="Tìm kiếm & Căn chỉnh màn hình"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 hover:bg-white/10 hover:text-white transition"
                 >
-                  <Upload size={13} />
-                  Tải ảnh / video
+                  <Search size={14} />
+                </button>
+
+                {/* Asset Folder Upload */}
+                <label
+                  title="Tài nguyên & Tải lên tệp"
+                  className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-neutral-400 hover:bg-white/10 hover:text-white transition"
+                >
+                  <FolderOpen size={14} />
                   <input
                     type="file"
                     multiple
@@ -1427,156 +1923,229 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                     }}
                   />
                 </label>
-                                <button
-                  type="button"
-                  onClick={loadFilmTemplate}
-                  className="flex items-center gap-1 rounded-full px-2 py-1.5 text-[11.5px] text-sky-200 hover:bg-white/10"
-                  title="Tạo sẵn khung cảnh làm phim"
-                >
-                  <Clapperboard size={12.5} />
-                  Làm phim
-                </button>
+
+                {/* Templates / Flova Director */}
                 <button
                   type="button"
-                  onClick={loadFashionTemplate}
-                  className="flex items-center gap-1 rounded-full px-2 py-1.5 text-[11.5px] text-amber-200 hover:bg-white/10"
-                  title="Tạo sẵn mẫu phối đồ thời trang"
+                  onClick={() => setScriptDirectorOpen(true)}
+                  title="Mẫu & Đạo diễn Kịch bản Flova"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 hover:bg-white/10 hover:text-white transition"
                 >
-                  <Shirt size={12.5} />
-                  Phối đồ
+                  <LayoutTemplate size={14} />
                 </button>
-                <span className="mx-0.5 h-3.5 w-px bg-white/10" />
+
+                {/* AI Copilot */}
                 <button
                   type="button"
                   onClick={() => setCopilotOpen((v) => !v)}
+                  title="Trợ lý AI Copilot"
                   className={clsx(
-                    "flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[11.5px] font-medium transition",
-                    copilotOpen
-                      ? "bg-violet-600 text-white shadow-[0_0_12px_rgba(139,92,246,0.6)]"
-                      : "border border-violet-500/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/60 hover:text-white",
+                    "flex h-7 w-7 items-center justify-center rounded-full transition",
+                    copilotOpen ? "bg-violet-600 text-white" : "text-neutral-400 hover:bg-white/10 hover:text-white",
                   )}
-                  title="Trợ lý AI phòng dựng (gemini-3.5-flash)"
                 >
-                  <Bot size={12.5} className="text-violet-300" />
-                  Trợ lý AI
+                  <MessageSquare size={14} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setGatewaysModalOpen(true)}
-                  className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-950/40 px-2.5 py-1.5 text-[11.5px] font-medium text-sky-200 transition hover:bg-sky-900/60 hover:text-white"
-                  title="Quản lý Cổng Nối API (Bùi Hữu Thắng, DuomiAPI, IOOAI, PiAPI, RunningHub...)"
-                >
-                  <PlugZap size={12.5} className="text-sky-400" />
-                  Cổng API
-                </button>
-                <span className="mx-0.5 h-4 w-px bg-white/10" />
+
+                {/* History / Undo */}
                 <button
                   type="button"
                   onClick={undo}
-                  title="Hoàn tác (Ctrl+Z)"
-                  className="flex items-center gap-1 rounded-full px-2 py-1.5 text-[12px] text-ink-300 hover:bg-white/10 hover:text-white"
+                  title="Lịch sử thay đổi / Hoàn tác (Ctrl+Z)"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 hover:bg-white/10 hover:text-white transition"
                 >
-                  <Undo2 size={13} />
+                  <History size={14} />
                 </button>
-                <button
-                  type="button"
-                  onClick={redo}
-                  title="Làm lại (Ctrl+Y)"
-                  className="flex items-center gap-1 rounded-full px-2 py-1.5 text-[12px] text-ink-300 hover:bg-white/10 hover:text-white"
+
+                <span className="h-px w-4 bg-white/10 my-0.5" />
+
+                {/* User Avatar Circle */}
+                <Link
+                  href="/"
+                  title="Quay về Trang chủ Dashboard"
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 to-amber-200 text-black font-bold text-[11px] hover:scale-105 transition shadow-sm overflow-hidden"
                 >
-                  <Redo2 size={13} />
-                </button>
-                <button
-                  type="button"
-                  onClick={runSelected}
-                  disabled={!selectedId || runningAll}
-                  className="rounded-full px-2.5 py-1.5 text-[12px] text-ink-100 hover:bg-white/10 disabled:opacity-40"
-                >
-                  {tr("canvas.toolbar.run")}
-                </button>
-                <button
-                  type="button"
-                  onClick={runAll}
-                  disabled={runningAll || !nodes.length}
-                  className="flex items-center gap-1.5 rounded-full bg-brass-500 px-3 py-1.5 text-[12px] font-medium text-ink-950 hover:bg-brass-400 disabled:opacity-40"
-                >
-                  {runningAll ? <Spinner /> : <Sparkles size={13} />}
-                  {tr("canvas.toolbar.runAll")}
-                </button>
+                  <span>H</span>
+                </Link>
               </div>
             </Panel>
+
+            {/* 4. Bottom-Left Control Suite (Image 1 & 2) */}
+            <BottomControlBar
+              mouseMode={mouseMode}
+              onToggleMode={setMouseMode}
+              edgeCurve={edgeCurve}
+              onToggleCurve={() => {
+                setEdgeCurve((prev) =>
+                  prev === ConnectionLineType.Bezier ? ConnectionLineType.SmoothStep : ConnectionLineType.Bezier,
+                );
+              }}
+            />
+
+            <MiniMap
+              pannable
+              zoomable
+              position="bottom-right"
+              className="!overflow-hidden !rounded-xl !border !border-white/10 !bg-[#101014]/95 !shadow-xl"
+              style={{ width: 148, height: 96 }}
+              nodeColor={minimapColor}
+              maskColor="rgba(8,8,10,.62)"
+            />
+
+            {/* Sleek Floating Selection Pill Dock (Only shown when multiple nodes are selected) */}
             {selectedIds.length >= 2 && (
-              <Panel position="top-center">
-                <button
-                  onClick={groupSelected}
-                  className="flex items-center gap-1.5 rounded-full border border-white/15 bg-[#16161c] px-3 py-1.5 text-[12px] font-medium text-ink-100 shadow-lg hover:bg-[#1e1e24]"
-                >
-                  <Layers size={13} />
-                  Nhóm {selectedIds.length} khối đã chọn
-                </button>
-              </Panel>
-            )}
-            {selectedIds.length === 1 && nodes.find((n) => n.id === selectedIds[0])?.type === "group" && (
-              <Panel position="top-center">
-                <div className="flex items-center gap-1 rounded-full border border-white/10 bg-[#16161c] p-1 text-[12px] text-ink-200 shadow-lg">
+              <Panel position="bottom-center" className="!mb-6 z-40">
+                <div className="flex items-center gap-1.5 rounded-full border border-white/15 bg-[#121217]/95 px-3 py-1.5 shadow-2xl backdrop-blur-md text-[12px] text-white">
+                  <span className="text-neutral-400 font-medium px-1">Đã chọn {selectedIds.length} khối</span>
+                  <span className="h-3.5 w-px bg-white/15 mx-0.5" />
                   <button
-                    onClick={() => runGroup(selectedIds[0])}
-                    className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 font-medium text-brass-300 hover:bg-white/10"
+                    type="button"
+                    onClick={groupSelected}
+                    className="flex items-center gap-1 rounded-full bg-white/10 hover:bg-white/20 px-2.5 py-1 text-white font-medium transition"
+                    title="Gom thành nhóm (Ctrl+G)"
                   >
-                    <Play size={12.5} />
-                    Chạy nhóm
+                    <Layers size={13} className="text-amber-300" />
+                    Gom nhóm
                   </button>
-                  <span className="h-4 w-px bg-white/10" />
                   <button
-                    onClick={() => ungroupSelected(selectedIds[0])}
-                    className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 hover:bg-white/10"
+                    type="button"
+                    onClick={runSelected}
+                    disabled={runningAll}
+                    className="flex items-center gap-1 rounded-full hover:bg-white/10 px-2 py-1 text-neutral-200 hover:text-white transition disabled:opacity-40"
+                    title="Chạy các khối đã chọn"
                   >
-                    <Layers size={12.5} />
-                    Bỏ nhóm
+                    <Play size={12} fill="currentColor" />
+                    Chạy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={duplicateSelected}
+                    className="flex items-center gap-1 rounded-full hover:bg-white/10 px-2 py-1 text-neutral-200 hover:text-white transition"
+                    title="Nhân bản (Ctrl+D)"
+                  >
+                    <Copy size={12} />
+                    Nhân bản
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deleteSelected}
+                    className="flex items-center gap-1 rounded-full hover:bg-rose-500/20 px-2 py-1 text-rose-300 transition"
+                    title="Xoá (Del)"
+                  >
+                    <Trash2 size={12} />
+                    Xoá
+                  </button>
+                  <span className="h-3.5 w-px bg-white/15 mx-0.5" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedIds([]);
+                      setSelectedId(null);
+                    }}
+                    className="rounded-full p-1 text-neutral-400 hover:bg-white/10 hover:text-white transition"
+                    title="Bỏ chọn (Esc)"
+                  >
+                    <X size={12} />
                   </button>
                 </div>
               </Panel>
             )}
+{/* Floating toolbar is now attached directly to GroupNode via NodeToolbar */}
           </ReactFlow>
           </NodeMenuContext.Provider>
           </RunNodeContext.Provider>
 
           {menu && (() => {
-            const target = nodes.find((n) => n.id === menu.nodeId);
-            if (!target) return null;
-            const isGroup = target.type === "group";
-            const item = (label: string, icon: ReactNode, onClick: () => void, danger?: boolean) => (
+            const isSelection = menu.isSelection || (selectedIds.length >= 2 && menu.nodeId && selectedIds.includes(menu.nodeId));
+            const target = menu.nodeId ? nodes.find((n) => n.id === menu.nodeId) : null;
+            const isGroup = target?.type === "group";
+
+            const item = (label: string, icon: ReactNode, onClick: () => void, danger?: boolean, badge?: string) => (
               <button
                 key={label}
+                type="button"
                 onClick={() => {
                   onClick();
                   setMenu(null);
                 }}
                 className={clsx(
-                  "flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] hover:bg-ink-800",
-                  danger ? "text-red-400" : "text-ink-200",
+                  "flex w-full items-center justify-between px-3 py-2 text-left text-[12px] transition hover:bg-white/10",
+                  danger ? "text-red-400 hover:text-red-300" : "text-ink-200 hover:text-white",
                 )}
               >
-                {icon}
-                {label}
+                <span className="flex items-center gap-2">
+                  {icon}
+                  {label}
+                </span>
+                {badge && (
+                  <span className="text-[10px] font-mono text-ink-500 bg-white/5 px-1.5 py-0.5 rounded">
+                    {badge}
+                  </span>
+                )}
               </button>
             );
+
             return (
               <div
-                className="fixed z-50 w-44 overflow-hidden rounded-lg border border-ink-700 bg-ink-850 py-1 shadow-xl"
-                style={{ left: menu.x, top: menu.y }}
+                className="fixed z-50 min-w-[200px] overflow-hidden rounded-xl border border-white/10 bg-[#16161f]/95 py-1.5 shadow-2xl backdrop-blur-md"
+                style={{
+                  left: Math.min(menu.x, typeof window !== "undefined" ? window.innerWidth - 220 : menu.x),
+                  top: Math.min(menu.y, typeof window !== "undefined" ? window.innerHeight - 280 : menu.y),
+                }}
+                onClick={(e) => e.stopPropagation()}
               >
-                {isGroup ? (
+                {isSelection ? (
                   <>
-                    {item("Chạy nhóm", <Play size={13} />, () => runGroup(menu.nodeId))}
-                    {item("Bỏ nhóm", <Layers size={13} />, () => ungroupSelected(menu.nodeId))}
-                    {item("Xoá cả nhóm", <Trash2 size={13} />, () => deleteGroupWithMembers(menu.nodeId), true)}
+                    <div className="px-3 py-1.5 border-b border-white/10 text-[11px] font-semibold text-amber-400 flex items-center gap-1.5">
+                      <FolderKanban size={13} />
+                      Đã chọn {selectedIds.length} khối
+                    </div>
+                    {item("Gom nhóm các khối", <FolderKanban size={13} className="text-amber-400" />, groupSelected, false, "Ctrl+G")}
+                    {item("Chạy các khối đã chọn", <Play size={13} className="text-brass-300" />, runSelected)}
+                    {item("Nhân bản", <Copy size={13} />, duplicateSelected)}
+                    {item("Xoá các khối đã chọn", <Trash2 size={13} />, deleteSelected, true, "Del")}
+                    <div className="my-1 border-t border-white/10" />
+                    {item("Bỏ chọn tất cả", <X size={13} />, () => { setSelectedIds([]); setSelectedId(null); })}
+                  </>
+                ) : isGroup ? (
+                  <>
+                    <div className="px-3 py-1.5 border-b border-white/10 text-[11px] font-semibold text-amber-300 flex items-center gap-1.5">
+                      <FolderKanban size={13} />
+                      {target?.data?.label ? String(target.data.label) : "Khung nhóm"}
+                    </div>
+                    {item("Chạy toàn bộ nhóm", <Play size={13} className="text-brass-300" />, () => runGroup(target!.id))}
+                    {item("Rã nhóm (Tách khối)", <Layers size={13} />, () => ungroupSelected(target!.id), false, "Ctrl+Shift+G")}
+                    {item("Xoá cả nhóm", <Trash2 size={13} />, () => deleteGroupWithMembers(target!.id), true)}
+                  </>
+                ) : target ? (
+                  <>
+                    <div className="px-3 py-1.5 border-b border-white/10 text-[11px] font-semibold text-ink-300 truncate">
+                      Khối: {String(target.data?.name ?? target.data?.label ?? target.type ?? "")}
+                    </div>
+                    {item("Chạy khối này", <Play size={13} className="text-brass-300" />, () => runNode(target.id).catch(() => {}))}
+                    {(target.data?.result?.url || target.data?.imageUrl || target.data?.videoUrl) && (
+                      <>
+                        {item("🔍 Phóng to xem chi tiết", <ZoomIn size={13} className="text-sky-300" />, () => {
+                          const u = target.data?.result?.url || target.data?.imageUrl || target.data?.videoUrl;
+                          const k: "image" | "video" = target.data?.result?.kind === "video" || target.data?.videoUrl ? "video" : "image";
+                          if (u) openLightbox({ url: u, kind: k, title: String(target.data?.name ?? "Chi tiết") });
+                        })}
+                        {item("✨ Dùng lại trên Canvas", <Sparkles size={13} className="text-amber-300" />, () => reuseNode(target.id))}
+                      </>
+                    )}
+                    {item("Nhân bản", <Copy size={13} />, () => duplicateNode(target.id))}
+                    {item("Xoá khối", <Trash2 size={13} />, () => deleteNode(target.id), true, "Del")}
                   </>
                 ) : (
                   <>
-                    {item("Chạy", <Play size={13} />, () => runNode(menu.nodeId).catch(() => {}))}
-                    {item("Nhân bản", <Copy size={13} />, () => duplicateNode(menu.nodeId))}
-                    {item("Xoá", <Trash2 size={13} />, () => deleteNode(menu.nodeId), true)}
+                    <div className="px-3 py-1.5 border-b border-white/10 text-[11px] font-semibold text-ink-400">
+                      Thao tác Canvas
+                    </div>
+                    {item("Thêm khối mới...", <Plus size={13} />, () => openAddAt(menu.x, menu.y))}
+                    {item("Căn vừa màn hình", <Search size={13} />, () => fitView({ padding: 0.25, duration: 400 }))}
+                    {item("Đạo diễn Flova", <Clapperboard size={13} className="text-amber-400" />, () => setScriptDirectorOpen(true))}
+                    {item("Trợ lý Copilot AI", <Bot size={13} className="text-blue-400" />, () => setCopilotOpen((v) => !v))}
+                    {item("Chạy toàn bộ luồng", <Sparkles size={13} className="text-brass-400" />, runAll)}
                   </>
                 )}
               </div>
@@ -1585,53 +2154,121 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
 
           {addMenu && (
             <div
-              className="fixed z-50 w-[232px] overflow-hidden rounded-2xl border border-white/10 bg-[#16161c]/95 p-1.5 shadow-2xl backdrop-blur"
+              className="fixed z-50 w-[280px] overflow-hidden rounded-2xl border border-white/10 bg-[#16161c]/98 p-2 shadow-2xl backdrop-blur-xl select-none"
               style={{
-                left: Math.max(8, Math.min(addMenu.x, window.innerWidth - 248)),
-                top: Math.max(8, Math.min(addMenu.y, window.innerHeight - 420)),
+                left: Math.max(8, Math.min(addMenu.x, window.innerWidth - 300)),
+                top: Math.max(8, Math.min(addMenu.y, window.innerHeight - 480)),
               }}
             >
-              <p className="px-2 pb-1 pt-1 text-[11px] font-medium text-ink-200">
-                {addMenu.connect?.handleType === "source"
-                  ? tr("canvas.connectTo")
-                  : addMenu.connect?.handleType === "target"
-                    ? tr("canvas.connectFrom")
-                    : tr("canvas.add")}
-              </p>
+              <div className="flex items-center justify-between px-2.5 pb-2 pt-1 border-b border-white/10">
+                <p className="text-[13px] font-semibold text-white">
+                  {addMenu.connect?.handleType === "source"
+                    ? tr("canvas.connectTo")
+                    : addMenu.connect?.handleType === "target"
+                      ? tr("canvas.connectFrom")
+                      : "Thêm các nút"}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setAddMenu(null)}
+                  className="rounded-full p-1 text-neutral-400 hover:text-white hover:bg-white/10 transition"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+
               {addMenu.connect && (
-                <p className="px-2 pb-1 text-[10px] text-ink-500">{tr("canvas.onlyCompatible")}</p>
+                <p className="px-2.5 pt-1.5 text-[10.5px] text-ink-500">{tr("canvas.onlyCompatible")}</p>
               )}
-              <div className="max-h-[340px] overflow-y-auto">
+
+              <div className="max-h-[380px] overflow-y-auto pt-1 space-y-1">
                 {menuItems.length === 0 && (
-                  <p className="px-2 py-3 text-[12px] text-ink-400">{tr("canvas.noMatch")}</p>
+                  <p className="px-2.5 py-3 text-[12px] text-ink-400">{tr("canvas.noMatch")}</p>
                 )}
-                {menuItems.map((item) => {
+
+                {/* Core Items */}
+                {menuItems.filter((i: any) => !i.section || i.section === "core").map((item) => {
                   const Icon = item.icon;
                   return (
                     <button
                       key={`${item.type}-${item.label}`}
                       type="button"
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData(
-                          "application/atelier-node",
-                          JSON.stringify({ type: item.type, data: itemData(item) }),
-                        );
-                        event.dataTransfer.effectAllowed = "move";
-                      }}
                       onClick={() => placeFromMenu(item)}
-                      className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-white/10"
+                      className="group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left hover:bg-white/10 transition"
                     >
-                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/5">
-                        <Icon size={14} className={item.accent} />
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/5 group-hover:bg-white/10 group-hover:text-white text-neutral-300 transition">
+                        <Icon size={16} />
                       </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-[12.5px] text-ink-100">{item.label}</span>
-                        <span className="block truncate text-[10.5px] text-ink-500">{item.hint}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium text-white">{item.label}</span>
+                        <span className="block truncate text-[11px] text-neutral-400">{item.hint}</span>
                       </span>
                     </button>
                   );
                 })}
+
+                {/* Utilities Section */}
+                {menuItems.some((i: any) => i.section === "utility") && (
+                  <>
+                    <div className="pt-2 pb-1 px-2.5 text-[11px] font-medium text-neutral-500 uppercase tracking-wider">
+                      Tiện ích
+                    </div>
+                    {menuItems.filter((i: any) => i.section === "utility").map((item: any) => {
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          key={`${item.type}-${item.label}`}
+                          type="button"
+                          onClick={() => placeFromMenu(item)}
+                          className="group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left hover:bg-white/10 transition"
+                        >
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/5 group-hover:bg-white/10 group-hover:text-white text-neutral-300 transition">
+                            <Icon size={16} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center justify-between">
+                              <span className="block truncate text-[13px] font-medium text-white">{item.label}</span>
+                              {item.badge && (
+                                <span className="rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-300">
+                                  {item.badge}
+                                </span>
+                              )}
+                            </span>
+                            <span className="block truncate text-[11px] text-neutral-400">{item.hint}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
+
+                {/* Sources Section */}
+                {menuItems.some((i: any) => i.section === "source") && (
+                  <>
+                    <div className="pt-2 pb-1 px-2.5 text-[11px] font-medium text-neutral-500 uppercase tracking-wider">
+                      Thêm nguồn
+                    </div>
+                    {menuItems.filter((i: any) => i.section === "source").map((item: any) => {
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          key={`${item.type}-${item.label}`}
+                          type="button"
+                          onClick={() => placeFromMenu(item)}
+                          className="group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left hover:bg-white/10 transition"
+                        >
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/5 group-hover:bg-white/10 group-hover:text-white text-neutral-300 transition">
+                            <Icon size={16} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-medium text-white">{item.label}</span>
+                            <span className="block truncate text-[11px] text-neutral-400">{item.hint}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1667,6 +2304,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             onAddPromptNode={handleAddPromptFromCopilot}
             onAddStoryboard={handleAddStoryboardFromCopilot}
             onUpdateSelectedNodeText={handleUpdateSelectedNodeText}
+            onOpenScriptDirector={() => setScriptDirectorOpen(true)}
             projectName={project.name}
           />
 
@@ -1674,14 +2312,29 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             isOpen={gatewaysModalOpen}
             onClose={() => setGatewaysModalOpen(false)}
           />
+
+          <ScriptDirectorModal
+            isOpen={scriptDirectorOpen}
+            onClose={() => setScriptDirectorOpen(false)}
+            projectId={project?.id}
+            onApplyPlan={handleApplyProductionPlan}
+          />
         </div>
 
       <Inspector
-        node={selectedNode}
+        node={inspectedNode}
+        nodes={nodes}
+        edges={edges}
         onPatch={patchNode}
-        onRun={() => runSelected()}
-        onClose={() => setSelectedId(null)}
+        onRun={() => (inspectedNode ? runNode(inspectedNode.id) : runSelected())}
+        onReuse={handleReuseMedia}
+        onClose={() => {
+          setInspectedId(null);
+          setSelectedId(null);
+        }}
       />
+
+      <MediaLightbox onReuse={handleReuseMedia} />
     </div>
   );
 }
@@ -1727,36 +2380,142 @@ function ConnectHint() {
   );
 }
 
-function ZoomBar() {
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+function BottomControlBar({
+  mouseMode,
+  onToggleMode,
+  edgeCurve,
+  onToggleCurve,
+  onUndo,
+  onRedo,
+}: {
+  mouseMode: "select" | "pan";
+  onToggleMode: (mode: "select" | "pan") => void;
+  edgeCurve: ConnectionLineType;
+  onToggleCurve: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+}) {
+  const { zoomIn, zoomOut, fitView, zoomTo } = useReactFlow();
   const { zoom } = useViewport();
+  const [helpOpen, setHelpOpen] = useState(false);
+
   return (
-    <Panel position="bottom-left" className="!mb-3 !ml-2">
-      <div className="flex items-center rounded-full border border-white/10 bg-[#16161c]/95 p-1 text-[12px] text-ink-200 shadow-lg backdrop-blur">
+    <Panel position="bottom-left" className="!mb-4 !ml-3 flex items-center gap-2 z-20">
+      <div className="flex items-center gap-1.5 rounded-full border border-white/15 bg-[#121217]/95 px-2.5 py-1.5 text-neutral-300 shadow-2xl backdrop-blur-md">
+        {/* 0. Undo & Redo (Tapnow style) */}
         <button
           type="button"
-          aria-label="Thu nhỏ"
-          onClick={() => zoomOut({ duration: 160 })}
-          className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10"
+          onClick={onUndo}
+          title="Hoàn tác (Ctrl+Z)"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition"
         >
-          <Minus size={14} />
-        </button>
-        <span className="w-11 text-center tabular-nums text-ink-300">{Math.round(zoom * 100)}%</span>
-        <button
-          type="button"
-          aria-label="Phóng to"
-          onClick={() => zoomIn({ duration: 160 })}
-          className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10"
-        >
-          <Plus size={14} />
+          <Undo2 size={13} />
         </button>
         <button
           type="button"
-          onClick={() => fitView({ padding: 0.25, duration: 280 })}
-          className="rounded-full px-2.5 py-1 text-ink-200 hover:bg-white/10"
+          onClick={onRedo}
+          title="Làm lại (Ctrl+Y)"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition"
         >
-          Căn
+          <Redo2 size={13} />
         </button>
+
+        <span className="h-3.5 w-px bg-white/15 mx-0.5" />
+
+        {/* 1. Box Select Tool (⬚) */}
+        <button
+          type="button"
+          onClick={() => onToggleMode(mouseMode === "select" ? "pan" : "select")}
+          title={mouseMode === "select" ? "Đang ở chế độ Quét chọn (V) - Click để chuyển sang Bàn tay kéo (H)" : "Đang ở chế độ Bàn tay kéo (H) - Click để chuyển sang Quét chọn (V)"}
+          className={clsx(
+            "flex h-7 w-7 items-center justify-center rounded-lg transition",
+            mouseMode === "select" ? "bg-white/20 text-white font-bold" : "text-neutral-400 hover:text-white hover:bg-white/10"
+          )}
+        >
+          <MousePointer2 size={13} />
+        </button>
+
+        {/* 2. Curve Line Toggle (〰️) */}
+        <button
+          type="button"
+          onClick={onToggleCurve}
+          title={edgeCurve === ConnectionLineType.Bezier ? "Kiểu dây nối: Cong mềm (Bezier) - Click để chuyển sang Thẳng" : "Kiểu dây nối: Góc vuông (SmoothStep) - Click để chuyển sang Cong"}
+          className={clsx(
+            "flex h-7 w-7 items-center justify-center rounded-lg transition",
+            edgeCurve === ConnectionLineType.Bezier ? "text-amber-400 hover:bg-white/10" : "text-neutral-400 hover:text-white hover:bg-white/10"
+          )}
+        >
+          <Spline size={13} />
+        </button>
+
+        {/* 3. Snap / Auto Layout (⚡) */}
+        <button
+          type="button"
+          onClick={() => fitView({ padding: 0.25, duration: 300 })}
+          title="Tự động căn chỉnh màn hình"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition"
+        >
+          <Zap size={13} />
+        </button>
+
+        {/* 4. Fit View (⛶) */}
+        <button
+          type="button"
+          onClick={() => fitView({ padding: 0.25, duration: 300 })}
+          title="Căn vừa màn hình (Fit View)"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition"
+        >
+          <Maximize2 size={13} />
+        </button>
+
+        <span className="h-3.5 w-px bg-white/15 mx-0.5" />
+
+        {/* 5. Zoom Slider (──⚪──) */}
+        <div className="flex items-center gap-1.5 px-1">
+          <input
+            type="range"
+            min={0.15}
+            max={2}
+            step={0.05}
+            value={zoom}
+            onChange={(e) => zoomTo(parseFloat(e.target.value), { duration: 80 })}
+            className="w-16 accent-amber-400 cursor-pointer h-1 bg-white/20 rounded-lg appearance-none"
+            title={`Thu phóng: ${Math.round(zoom * 100)}%`}
+          />
+          <span className="font-mono text-[11px] tabular-nums text-neutral-300 w-8 text-right">
+            {Math.round(zoom * 100)}%
+          </span>
+        </div>
+      </div>
+
+      {/* Help Circle (?) */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setHelpOpen((v) => !v)}
+          title="Trợ giúp & Phím tắt chuột/bàn phím"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#121217]/95 text-neutral-400 hover:text-white hover:border-white/30 shadow-xl backdrop-blur-md transition"
+        >
+          <HelpCircle size={14} />
+        </button>
+
+        {helpOpen && (
+          <div className="absolute bottom-10 left-0 w-64 rounded-2xl border border-white/15 bg-[#161622]/98 p-3 shadow-2xl backdrop-blur-xl text-white text-[12px] space-y-2 z-50">
+            <div className="font-semibold text-amber-300 flex items-center justify-between">
+              <span>Phím tắt & Thao tác chuột</span>
+              <button type="button" onClick={() => setHelpOpen(false)} className="text-neutral-400 hover:text-white">✕</button>
+            </div>
+            <div className="space-y-1 text-[11px] text-neutral-300">
+              <div className="flex justify-between"><span>Kéo chuột trái</span><span className="font-mono text-amber-200">Quét chọn nhiều khối</span></div>
+              <div className="flex justify-between"><span>Chuột phải</span><span className="font-mono text-amber-200">Menu ngữ cảnh / Gom nhóm</span></div>
+              <div className="flex justify-between"><span>Chọn nhóm</span><span className="font-mono text-amber-200">Thanh lệnh nổi trên nhóm</span></div>
+              <div className="flex justify-between"><span>Chế độ chọn / kéo</span><span className="font-mono text-amber-200">Phím V / Phím H</span></div>
+              <div className="flex justify-between"><span>Gom nhóm nhanh</span><span className="font-mono text-amber-200">Ctrl + G</span></div>
+              <div className="flex justify-between"><span>Rã nhóm</span><span className="font-mono text-amber-200">Ctrl + Shift + G</span></div>
+              <div className="flex justify-between"><span>Thu gọn thanh dưới</span><span className="font-mono text-amber-200">Ctrl + B</span></div>
+            </div>
+          </div>
+        )}
       </div>
     </Panel>
   );

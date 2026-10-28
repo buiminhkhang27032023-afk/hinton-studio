@@ -1,4 +1,5 @@
 import { getDb, now, uid } from "./db";
+import { externalizeInline } from "./inline-media";
 import type { GraphPayload, ProjectSummary } from "./types";
 
 export function listProjects(): ProjectSummary[] {
@@ -55,7 +56,40 @@ export function getGraph(projectId: string): GraphPayload {
     | { data: string }
     | undefined;
   if (!row) return { nodes: [], edges: [] };
-  return JSON.parse(row.data) as GraphPayload;
+  const graph = JSON.parse(row.data) as GraphPayload;
+
+  try {
+    const jobs = getDb()
+      .prepare(
+        "SELECT node_id, status, output FROM jobs WHERE project_id = ? AND status = 'succeeded' ORDER BY updated_at ASC",
+      )
+      .all(projectId) as { node_id: string; status: string; output: string }[];
+    if (jobs && jobs.length > 0) {
+      const jobMap = new Map<string, any>();
+      for (const j of jobs) {
+        if (j.node_id && j.output) {
+          try {
+            jobMap.set(j.node_id, JSON.parse(j.output));
+          } catch {}
+        }
+      }
+      for (const n of graph.nodes as any[]) {
+        const nodeData = n.data as any;
+        if ((!nodeData?.result || nodeData?.status === "running") && jobMap.has(n.id)) {
+          const out = jobMap.get(n.id);
+          n.data = {
+            ...nodeData,
+            status: "done",
+            result: out,
+            videoUrl: out?.kind === "video" ? out.url : nodeData?.videoUrl,
+            imageUrl: out?.kind === "image" ? out.url : nodeData?.imageUrl,
+          };
+        }
+      }
+    }
+  } catch {}
+
+  return graph;
 }
 
 export function saveGraph(projectId: string, graph: GraphPayload): void {
@@ -64,7 +98,7 @@ export function saveGraph(projectId: string, graph: GraphPayload): void {
       `INSERT INTO graphs(project_id, data, updated_at) VALUES(?, ?, ?)
        ON CONFLICT(project_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
     )
-    .run(projectId, JSON.stringify(graph), now());
+    .run(projectId, JSON.stringify(externalizeInline(graph, projectId)), now());
   getDb().prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(now(), projectId);
 }
 

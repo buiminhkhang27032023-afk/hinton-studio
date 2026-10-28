@@ -47,7 +47,9 @@ export function sourceHandleFor(type?: string | null): string | null {
 
 /** Kinds the node's single input will take. Empty means nothing may connect in. */
 export function accepts(type?: string | null, data?: NodeData): PortKind[] {
-  if (!type || type === "prompt" || type === "image" || type === "group") return [];
+  if (!type || type === "group") return [];
+  if (type === "prompt") return ["text"];
+  if (type === "image") return ["image", "video", "any"];
   if (type === "prompt_master") return ["text"];
   if (type === "result") return ["text", "image", "video", "any"];
   if (type === "generate") {

@@ -32,13 +32,19 @@ const NAV = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  // Hooks must run on every render, before any early return (Rules of Hooks).
   const { tr, lang, setLang } = useUi();
   const currentProjectId = useStudio((s) => s.project?.id);
 
   useEffect(() => {
-    const stored = localStorage.getItem("atelier:lang");
-    if (stored === "vi" || stored === "en") setLang(stored);
+    try {
+      const stored = localStorage.getItem("atelier:lang");
+      if (stored === "vi" || stored === "en") setLang(stored);
+    } catch {}
   }, [setLang]);
+
+  // Full-screen canvas experience matching TapNow / Creative OS (Image 1 & 2)
+  if (pathname.startsWith("/canvas")) return null;
 
   return (
     <aside className="flex w-[208px] shrink-0 flex-col border-r border-white/10 bg-[#0e0e13]/90 backdrop-blur-md">
@@ -63,19 +69,16 @@ export function Sidebar() {
               key={href}
               href={targetHref}
               className={clsx(
-                "group relative flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium transition",
+                "group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition duration-200",
                 active
-                  ? "bg-white/10 text-white shadow-sm"
-                  : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200",
+                  ? "bg-[#fae7c0] text-black font-bold shadow-md shadow-amber-500/10"
+                  : "text-neutral-400 hover:bg-white/5 hover:text-white",
               )}
             >
-              {active && (
-                <span className="absolute left-0 top-1/2 h-3.5 w-[2.5px] -translate-y-1/2 rounded-full bg-amber-400" />
-              )}
               <Icon
-                size={15}
-                strokeWidth={1.8}
-                className={active ? "text-amber-300" : "text-neutral-500 group-hover:text-neutral-300"}
+                size={16}
+                strokeWidth={active ? 2.4 : 1.8}
+                className={active ? "text-black" : "text-neutral-400 group-hover:text-neutral-200"}
               />
               <span className="truncate">{tr(key)}</span>
             </Link>

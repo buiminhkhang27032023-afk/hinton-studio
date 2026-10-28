@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { createJob, getJob, updateJob } from "@/lib/jobs";
 import { getModel } from "@/lib/models";
 import { runModel } from "@/lib/provider";
-import { prepareReferenceImages } from "@/lib/reference-images";
-import { localUrlToDataUri, persistRemoteAsset } from "@/lib/storage";
+import { prepareReferenceImages, prepareReferenceMedia } from "@/lib/reference-images";
+import { localUrlToDataUri, optimizeImageDataUri, persistRemoteAsset } from "@/lib/storage";
 import type { ModelKind } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -43,20 +43,60 @@ export async function POST(request: Request) {
 
   updateJob(job.id, { status: "running" });
 
-  // Inline locally stored images — the provider cannot reach our /api/files URLs.
+  // Inline & optimize locally stored images — provider servers cannot read /api/files,
+  // and uncompressed multi-megabyte PNGs cause upstream gateway timeouts (502 Bad Gateway).
   const vars: Record<string, unknown> = { ...(body.vars ?? {}) };
-  if (model.provider !== "iooai" && typeof vars.image === "string") vars.image = localUrlToDataUri(vars.image);
-  if (model.provider !== "iooai" && typeof vars.modelImage === "string") vars.modelImage = localUrlToDataUri(vars.modelImage);
-  if (model.provider !== "iooai" && typeof vars.garmentImage === "string") vars.garmentImage = localUrlToDataUri(vars.garmentImage);
-  if (model.provider !== "iooai" && Array.isArray(vars.images)) {
-    vars.images = vars.images.map((item) =>
-      typeof item === "string" ? localUrlToDataUri(item) : item,
+  const isUrlProvider =
+    model.provider === "iooai" ||
+    model.provider === "runninghub" ||
+    model.provider?.startsWith("runninghub");
+
+  if (!isUrlProvider && typeof vars.image === "string") {
+    vars.image = await optimizeImageDataUri(vars.image);
+  }
+  if (!isUrlProvider && typeof vars.modelImage === "string") {
+    vars.modelImage = await optimizeImageDataUri(vars.modelImage);
+  }
+  if (!isUrlProvider && typeof vars.garmentImage === "string") {
+    vars.garmentImage = await optimizeImageDataUri(vars.garmentImage);
+  }
+  if (!isUrlProvider && Array.isArray(vars.images)) {
+    vars.images = await Promise.all(
+      vars.images.map((item) =>
+        typeof item === "string" ? optimizeImageDataUri(item) : item,
+      ),
     );
   }
 
   try {
-    if (model.provider === "iooai" && model.kind === "video") {
-      vars.images = await prepareReferenceImages(Array.isArray(vars.images) && vars.images.length ? vars.images : vars.image ? [vars.image] : []);
+    if (isUrlProvider && (model.kind === "video" || model.kind === "image")) {
+      const rawSources =
+        Array.isArray(vars.images) && vars.images.length
+          ? vars.images
+          : vars.image ? [vars.image] : [];
+      if (rawSources.length > 0) {
+        const prepared = await prepareReferenceImages(rawSources);
+        vars.images = prepared;
+        vars.image = prepared[0];
+        vars.firstImageUrl = prepared[0];
+        vars.firstFrameUrl = prepared[0];
+        vars.imageUrl = prepared[0];
+        vars.imageUrls = prepared;
+      }
+      if (typeof vars.modelImage === "string" && vars.modelImage.trim()) {
+        const prep = await prepareReferenceImages([vars.modelImage]);
+        vars.modelImage = prep[0];
+      }
+      if (typeof vars.garmentImage === "string" && vars.garmentImage.trim()) {
+        const prep = await prepareReferenceImages([vars.garmentImage]);
+        vars.garmentImage = prep[0];
+      }
+      const rawVideo = (vars.video || vars.videoUrl) as string | undefined;
+      if (typeof rawVideo === "string" && rawVideo.trim()) {
+        const prep = await prepareReferenceMedia(rawVideo);
+        vars.video = prep;
+        vars.videoUrl = prep;
+      }
     }
     const result = await runModel({
       model: model.id,

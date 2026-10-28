@@ -1,9 +1,10 @@
 "use client";
 
 import { withBasePath } from "@/lib/base-path";
+import { LazyVideo } from "@/components/ui/lazy-video";
 
 import { memo, useCallback, useRef, useState, type ReactNode } from "react";
-import { Handle, NodeToolbar, Position, useReactFlow, type NodeProps } from "@xyflow/react";
+import { Handle, NodeToolbar, Position, useReactFlow, useEdges, useNodes, type NodeProps } from "@xyflow/react";
 import clsx from "clsx";
 import {
   AlertCircle,
@@ -20,6 +21,10 @@ import {
   ArrowUp,
   Download,
   Sparkles,
+  FolderInput,
+  LayoutGrid,
+  Unlink,
+  Trash2,
 } from "lucide-react";
 import { NodeMasterPromptBar } from "./master-prompt-section";
 import { useStudio, useModelsOfKind, useModelById } from "@/lib/studio-store";
@@ -27,7 +32,7 @@ import { useNodeMenu, useRunNode } from "./run-context";
 import { sourceMediaRole, type PortKind } from "./ports";
 import { useUi } from "@/lib/ui-store";
 import type { StudioNodeData } from "@/lib/execute";
-import { getProviderMeta, resolveProvider } from "@/lib/provider-meta";
+import { getProviderMeta, resolveProvider, durationOptions, getDefaultDuration } from "@/lib/provider-meta";
 
 function NodeActions({ id, canRun = true }: { id: string; canRun?: boolean }) {
   const { tr } = useUi();
@@ -54,7 +59,7 @@ function NodeActions({ id, canRun = true }: { id: string; canRun?: boolean }) {
   );
 }
 
-/** TapNow-style node: the picture is the node. Settings only show once it is selected. */
+/** TapNow-style node: the picture is the node. Settings show once it is selected in Inspector. */
 function TapFrame({
   id,
   selected,
@@ -66,7 +71,7 @@ function TapFrame({
   text,
   canRun = true,
   busy,
-  width = 176,
+  width = 210,
   onMediaClick,
   onDrop,
   editor,
@@ -89,41 +94,91 @@ function TapFrame({
   children?: ReactNode;
 }) {
   const ready = data.status === "done" || Boolean(preview || video);
+  const { openLightbox } = useUi();
+  const run = useRunNode();
+  const menu = useNodeMenu();
+  const lastRunTimeRef = useRef(0);
+
+  const handleRun = useCallback(
+    (e: React.SyntheticEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const now = Date.now();
+      if (now - lastRunTimeRef.current < 400) return;
+      lastRunTimeRef.current = now;
+      run(id);
+    },
+    [id, run],
+  );
+
+  const hasMedia = Boolean(preview || video);
+
+  const handleMediaClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (hasMedia) {
+        e.stopPropagation();
+        openLightbox({
+          url: (video || preview)!,
+          kind: video ? "video" : "image",
+          title: data.name || label,
+        });
+      } else if (onMediaClick) {
+        onMediaClick();
+      }
+    },
+    [hasMedia, video, preview, openLightbox, data.name, label, onMediaClick],
+  );
+
   return (
     <div
-      className="relative"
+      className="group relative"
       style={{ width }}
       onDragOver={onDrop ? (event) => event.preventDefault() : undefined}
       onDrop={onDrop}
     >
-      {selected && (
-        <NodeToolbar isVisible position={Position.Bottom} offset={12} align="center">
-          <div className="nodrag nopan w-[280px] rounded-2xl border border-white/10 bg-[#141414]/95 p-2.5 text-white shadow-[0_18px_50px_rgba(0,0,0,.7)]">
-            {editor}
-            <NodeActions id={id} canRun={canRun} />
-          </div>
-        </NodeToolbar>
-      )}
-      <div className="pointer-events-none absolute -top-[22px] left-0 flex max-w-full items-center gap-1 text-[12.5px] font-medium text-white">
-        <Icon size={13} strokeWidth={1.8} />
-        <span className="truncate">{data.name || label}</span>
-        {ready && data.status !== "running" && data.status !== "error" && <Check size={12} strokeWidth={2.6} />}
-        {data.status === "running" && <Loader2 size={12} className="animate-spin text-white/70" />}
-        {data.status === "error" && <AlertCircle size={12} className="text-red-400" />}
+      <div className="pointer-events-none absolute -top-[24px] left-0 right-0 flex items-center justify-between text-[11.5px] font-medium text-neutral-400 select-none">
+        <div className="flex max-w-[65%] items-center gap-1.5 truncate">
+          <Icon size={12} className="text-neutral-400 shrink-0" strokeWidth={1.8} />
+          <span className="truncate">{data.name || label}</span>
+          {ready && data.status !== "running" && data.status !== "error" && (
+            <Check size={11} className="text-emerald-400 shrink-0" strokeWidth={2.4} />
+          )}
+          {data.status === "running" && <Loader2 size={11} className="animate-spin text-amber-400 shrink-0" />}
+          {data.status === "error" && <AlertCircle size={11} className="text-rose-400 shrink-0" />}
+        </div>
+        {canRun && (
+          <button
+            type="button"
+            className="pointer-events-auto nodrag flex items-center gap-1 rounded-full bg-white/10 hover:bg-brass-400 hover:text-black px-2 py-0.5 text-[10.5px] text-white/90 transition shadow-sm font-medium"
+            disabled={data.status === "running"}
+            onMouseDown={handleRun}
+            onClick={handleRun}
+            title="Chạy khối này ngay (1 nhấp chuột)"
+          >
+            {data.status === "running" ? (
+              <Loader2 size={10} className="animate-spin" />
+            ) : (
+              <Play size={10} fill="currentColor" />
+            )}
+            <span>{data.status === "running" ? "Đang tạo…" : ready ? "Tạo lại" : "Chạy"}</span>
+          </button>
+        )}
       </div>
+
       <div
         className={clsx(
-          "overflow-hidden rounded-[18px] bg-[#141414]",
-          selected && "outline outline-[1.5px] outline-white",
+          "relative overflow-hidden rounded-2xl bg-[#121216] border border-white/10 transition-all duration-150",
+          selected ? "ring-1 ring-white/90 border-white/40 shadow-xl" : "hover:border-white/20",
+          hasMedia && "cursor-pointer",
         )}
         style={text != null ? { minHeight: 120 } : { aspectRatio: "3 / 4" }}
-        onClick={onMediaClick}
+        onClick={handleMediaClick}
       >
         {video ? (
-          <video src={withBasePath(video)} className="h-full w-full object-cover" muted playsInline />
+          <LazyVideo src={withBasePath(video)} className="h-full w-full object-cover" />
         ) : preview ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={withBasePath(preview)} alt="" className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={withBasePath(preview)} alt="" className="h-full w-full object-cover" />
         ) : text != null ? (
           <p className={clsx("line-clamp-6 p-3 text-[12.5px] leading-relaxed", text ? "text-white/90" : "text-white/35")}>
             {text || "Nhập câu lệnh…"}
@@ -132,6 +187,61 @@ function TapFrame({
           <span className="grid h-full place-items-center text-white/25">
             {busy ? <Loader2 size={20} className="animate-spin" /> : <Icon size={26} strokeWidth={1.3} />}
           </span>
+        )}
+
+        {/* Hover action overlay on media */}
+        {hasMedia && (
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none flex flex-col justify-between p-2">
+            <div className="flex items-center justify-between pointer-events-auto">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLightbox({
+                    url: (video || preview)!,
+                    kind: video ? "video" : "image",
+                    title: data.name || label,
+                  });
+                }}
+                className="flex items-center gap-1 rounded-full bg-black/70 px-2 py-0.5 text-[10.5px] font-medium text-white shadow-md backdrop-blur-md hover:bg-black/90 transition"
+                title="Phóng to xem chi tiết"
+              >
+                <ZoomIn size={11} />
+                <span>Phóng to</span>
+              </button>
+
+              {onMediaClick && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMediaClick();
+                  }}
+                  className="flex items-center gap-1 rounded-full bg-black/70 px-2 py-0.5 text-[10.5px] font-medium text-white/80 shadow-md backdrop-blur-md hover:bg-black/90 hover:text-white transition"
+                  title="Thay đổi file ảnh/video"
+                >
+                  <span>Đổi file</span>
+                </button>
+              )}
+            </div>
+
+            {menu?.reuse && (
+              <div className="flex items-center gap-1 pointer-events-auto">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    menu.reuse?.(id);
+                  }}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-brass-500/90 hover:bg-brass-400 px-2 py-1 text-[11px] font-medium text-black shadow-md transition"
+                  title="Dùng lại ảnh/video này làm khối đầu vào mới trên Canvas"
+                >
+                  <Sparkles size={11} />
+                  <span>Dùng lại</span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
       {children}
@@ -151,9 +261,9 @@ function NodePorts({ out, accept }: { out?: PortKind | null; accept?: string | n
           type="target"
           position={Position.Left}
           id="in"
-          title="Đầu vào (Nhận Prompt / Ảnh / Video)"
+          title="Đầu vào"
           data-accept={accept}
-          className="!border-2 !border-[#18181b] !bg-sky-400"
+          className="!h-2.5 !w-2.5 !border-2 !border-[#121216] !bg-neutral-400 hover:!bg-sky-400 hover:!scale-125 transition-all !cursor-crosshair"
         />
       )}
       {hasOut && (
@@ -161,9 +271,9 @@ function NodePorts({ out, accept }: { out?: PortKind | null; accept?: string | n
           type="source"
           position={Position.Right}
           id="out"
-          title="Đầu ra (Truyền kết quả sang Node khác)"
+          title="Đầu ra"
           data-port={out}
-          className="!border-2 !border-[#18181b] !bg-amber-300"
+          className="!h-2.5 !w-2.5 !border-2 !border-[#121216] !bg-neutral-400 hover:!bg-amber-400 hover:!scale-125 transition-all !cursor-crosshair"
         />
       )}
     </>
@@ -198,7 +308,7 @@ export const PromptNode = memo(function PromptNode({ id, data, selected }: NodeP
         </div>
       }
     >
-      <NodePorts out="text" />
+      <NodePorts out="text" accept="text" />
     </TapFrame>
   );
 });
@@ -215,7 +325,10 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
 
   const isVideoMedia = Boolean(nodeData.videoUrl || nodeData.result?.kind === "video");
   const video = nodeData.videoUrl || (nodeData.result?.kind === "video" ? nodeData.result.url : undefined);
-  const preview = !isVideoMedia ? (nodeData.imageUrl || (nodeData.result?.kind === "image" ? nodeData.result.url : undefined)) : undefined;
+  const connectedPreview = useConnectedPreview(id, 0);
+  const preview = !isVideoMedia
+    ? (nodeData.imageUrl || (nodeData.result?.kind === "image" ? nodeData.result.url : undefined) || connectedPreview)
+    : undefined;
 
   const upload = useCallback(
     async (file: File) => {
@@ -251,7 +364,7 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
       video={video}
       canRun={false}
       busy={busy}
-      onMediaClick={() => selected && inputRef.current?.click()}
+      onMediaClick={() => inputRef.current?.click()}
       onDrop={(event) => {
         const file = event.dataTransfer.files?.[0];
         if (file) upload(file);
@@ -277,7 +390,7 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
           event.target.value = "";
         }}
       />
-      <NodePorts out={isVideoMedia ? "video" : "image"} />
+      <NodePorts out={isVideoMedia ? "video" : "image"} accept="image video any" />
     </TapFrame>
   );
 });
@@ -398,24 +511,48 @@ export const GenerateNode = memo(function GenerateNode({ id, data, selected }: N
             <PillSelect
               value={nodeData.modelId ?? ""}
               onChange={(value) => {
+                if (!value) {
+                  update({ modelId: "" });
+                  return;
+                }
+                const avail = durationOptions(value);
+                let dur = nodeData.duration;
+                if (!dur || !avail.includes(dur)) {
+                  dur = getDefaultDuration(value);
+                  if (!avail.includes(dur)) {
+                    dur = avail[avail.length - 1] ?? 10;
+                  }
+                }
+                let aspect = nodeData.aspect ?? "16:9";
+                const p = (nodeData.prompt ?? "").toLowerCase();
+                if (p.includes("9:16") || p.includes("dọc") || p.includes("vertical") || p.includes("tiktok")) {
+                  aspect = "9:16";
+                } else if (p.includes("16:9") || p.includes("ngang") || p.includes("landscape")) {
+                  aspect = "16:9";
+                }
+
                 if (value.startsWith("iooai:")) {
-                  update({ modelId: value, duration: 10, resolution: "720p", aspect: "16:9" });
+                  update({ modelId: value, duration: dur, resolution: nodeData.resolution ?? "720p", aspect });
                 } else if (value.includes("piapi")) {
+                  const pDur = Math.min(15, Math.max(4, dur));
                   update({
                     modelId: value,
-                    duration: nodeData.duration && nodeData.duration >= 4 && nodeData.duration <= 15 ? nodeData.duration : 5,
+                    duration: pDur,
                     resolution: nodeData.resolution ?? "480p",
+                    aspect,
                   });
                 } else if (value.includes("veo")) {
+                  const vDur = [4, 6, 8].includes(dur) ? dur : 6;
                   update({
                     modelId: value,
-                    duration: [4, 6, 8].includes(nodeData.duration ?? 0) ? nodeData.duration : 6,
+                    duration: vDur,
+                    aspect,
                   });
                 } else {
-                  update({ modelId: value });
+                  update({ modelId: value, duration: dur, aspect });
                 }
               }}
-              className="max-w-[130px]"
+              className="min-w-[140px] max-w-[220px]"
               options={[
                 { value: "", label: models.length ? tr("node.model") : tr("node.noModel") },
                 ...models.map((item) => ({
@@ -733,18 +870,7 @@ export const FashionComposeNode = memo(function FashionComposeNode({ id, data, s
  * Allowed durations differ per video model (Veo only takes 4/6/8), so the
  * picker reflects what this gateway actually accepts.
  */
-function durationOptions(modelId?: string | null): number[] {
-  if (modelId === "seed:video:piapi-omni-reference") return Array.from({ length: 12 }, (_, i) => i + 4);
-  if (modelId?.includes("veo")) return [4, 6, 8];
-  if (modelId?.startsWith("iooai:")) return [10];
-  if (modelId?.includes("omni")) return [5, 10];
-  // PiAPI Seedance accepts any whole second from 4 to 15.
-  if (modelId?.includes("piapi") || modelId?.includes("seedance")) {
-    return Array.from({ length: 12 }, (_, i) => i + 4);
-  }
-  // Otherwise let the user pick any second up to 30 instead of a sparse preset list.
-  return Array.from({ length: 30 }, (_, i) => i + 1);
-}
+// durationOptions and getDefaultDuration imported from @/lib/provider-meta
 
 function useNodeUpdater(id: string) {
   const { setNodes } = useReactFlow();
@@ -760,49 +886,56 @@ function useNodeUpdater(id: string) {
   );
 }
 
-interface ImageTag {
+export interface ImageTag {
   label: string;
   preview?: string;
 }
 
-/** Image-producing sources wired into this node, in connection order (@Ảnh1, @Ảnh2, …). */
-function useConnectedImageTags(nodeId: string): ImageTag[] {
-  const { getEdges, getNodes } = useReactFlow();
-  const nodes = getNodes();
-  const edges = getEdges().filter((edge) => {
-    if (edge.target !== nodeId) return false;
+export function getConnectedImageTags(
+  nodeId: string,
+  nodes: { id: string; type?: string; data?: unknown }[],
+  edges: { source: string; target: string }[],
+): ImageTag[] {
+  const incoming = edges.filter((edge) => edge.target === nodeId);
+  return incoming.flatMap((edge, index) => {
     const source = nodes.find((node) => node.id === edge.source);
-    if (!source) return false;
+    if (!source) return [];
     const role = sourceMediaRole(source.type, source.data as StudioNodeData);
-    return role === "image" || role === "look";
-  });
-  return edges.map((edge, index) => {
-    const source = nodes.find((node) => node.id === edge.source);
+    if (role !== "image" && role !== "look") return [];
     const sourceData = (source?.data ?? {}) as StudioNodeData;
     const preview = sourceData.imageUrl || sourceData.result?.url;
-    return { label: `Ảnh${index + 1}`, preview };
+    return [{ label: `Ảnh${index + 1}`, preview }];
   });
 }
 
+/** Image-producing sources wired into this node, in connection order (@Ảnh1, @Ảnh2, …). */
+export function useConnectedImageTags(nodeId: string): ImageTag[] {
+  const nodes = useNodes();
+  const edges = useEdges();
+  return getConnectedImageTags(nodeId, nodes, edges);
+}
+
 /** The nth image-producing source on this node (0 = model, 1 = garment). */
-function useConnectedPreview(nodeId: string, index: number): string | undefined {
+export function useConnectedPreview(nodeId: string, index: number): string | undefined {
   const tags = useConnectedImageTags(nodeId);
   return tags[index]?.preview;
 }
 
 /** A prompt textarea that opens a picker of connected images when "@" is typed. */
-function MentionTextarea({
+export function MentionTextarea({
   value,
   onChange,
   placeholder,
   tags,
   className,
+  rows,
 }: {
   value: string;
   onChange: (next: string) => void;
   placeholder?: string;
   tags: ImageTag[];
   className?: string;
+  rows?: number;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [query, setQuery] = useState<string | null>(null);
@@ -846,35 +979,62 @@ function MentionTextarea({
         onKeyDown={(event) => event.key === "Escape" && setQuery(null)}
         onBlur={() => setTimeout(() => setQuery(null), 150)}
       />
-      {query !== null && tags.length > 0 && (
-        <div className="nodrag absolute left-0 right-0 top-full z-20 mt-1 max-h-40 overflow-y-auto rounded-lg border border-ink-700 bg-ink-900 shadow-xl">
-          {matches.length === 0 ? (
-            <div className="px-2.5 py-1.5 text-[11.5px] text-ink-500">Không khớp ảnh nào.</div>
+      {query !== null && (
+        <div className="nodrag absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-xl border border-white/15 bg-neutral-900/95 p-1 shadow-2xl backdrop-blur-md">
+          {tags.length === 0 ? (
+            <div className="px-3 py-2 text-[11.5px] text-white/60 leading-relaxed">
+              Chưa có ảnh nối vào khối này.<br />
+              <span className="text-white/40 text-[10.5px]">Hãy kéo dây từ khối ảnh vào cổng bên trái để tag @Ảnh1, @Ảnh2...</span>
+            </div>
+          ) : matches.length === 0 ? (
+            <div className="px-3 py-2 text-[11.5px] text-white/50">Không khớp ảnh nào với &quot;@{query}&quot;.</div>
           ) : (
             matches.map((tag) => (
               <button
                 key={tag.label}
                 type="button"
-                className="nodrag flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11.5px] text-ink-200 hover:bg-ink-800"
+                className="nodrag flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-white/90 hover:bg-white/10 transition"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => insert(tag.label)}
               >
                 {tag.preview ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={withBasePath(tag.preview)} alt="" className="h-6 w-6 shrink-0 rounded object-cover" />
+                  <img loading="lazy" decoding="async" src={withBasePath(tag.preview)} alt="" className="h-7 w-7 shrink-0 rounded-md border border-white/20 object-cover" />
                 ) : (
-                  <span className="h-6 w-6 shrink-0 rounded bg-ink-800" />
+                  <span className="h-7 w-7 shrink-0 rounded-md bg-white/10" />
                 )}
-                <span>@{tag.label}</span>
+                <div className="flex flex-col min-w-0">
+                  <span className="font-semibold text-emerald-400">@{tag.label}</span>
+                  <span className="text-[10px] text-white/40 truncate">Ảnh tham chiếu số {tag.label.replace('Ảnh', '')}</span>
+                </div>
               </button>
             ))
           )}
         </div>
       )}
-      {query === null && tags.length > 0 && (
-        <p className="pointer-events-none absolute -bottom-4 left-0 text-[10px] text-ink-600">
-          Gõ @ để gắn thẻ ảnh đã nối ({tags.length})
-        </p>
+      {tags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
+          <span className="text-[10px] text-white/40">Gợi ý tag ảnh:</span>
+          {tags.map((tag) => (
+            <button
+              key={tag.label}
+              type="button"
+              onClick={() => {
+                const tagStr = `@${tag.label}`;
+                if (!value.includes(tagStr)) {
+                  onChange(value ? `${value} ${tagStr}` : tagStr);
+                }
+              }}
+              className="nodrag flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10.5px] font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
+              title={`Bấm để chèn @${tag.label} vào câu lệnh`}
+            >
+              {tag.preview && (
+                <img loading="lazy" decoding="async" src={withBasePath(tag.preview)} alt="" className="h-3.5 w-3.5 rounded object-cover" />
+              )}
+              <span>@{tag.label}</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -884,7 +1044,9 @@ function MentionTextarea({
 
 export const GroupNode = memo(function GroupNode({ id, data, selected }: NodeProps) {
   const { setNodes } = useReactFlow();
+  const { toast } = useUi();
   const groupData = data as { label?: string; width?: number; height?: number };
+
   const setLabel = useCallback(
     (label: string) => {
       setNodes((current) => current.map((node) => (node.id === id ? { ...node, data: { ...node.data, label } } : node)));
@@ -892,17 +1054,213 @@ export const GroupNode = memo(function GroupNode({ id, data, selected }: NodePro
     [id, setNodes],
   );
 
+  const handleAbsorbNearby = useCallback(() => {
+    setNodes((current) => {
+      const group = current.find((n) => n.id === id);
+      if (!group) return current;
+      const gX = group.position.x;
+      const gY = group.position.y;
+      const gW = groupData.width ?? 360;
+      const gH = groupData.height ?? 260;
+
+      // Find free nodes that intersect or sit inside this group's bounding box
+      const candidates = current.filter(
+        (n) =>
+          !n.parentId &&
+          n.id !== id &&
+          n.type !== "group" &&
+          n.position.x >= gX - 40 &&
+          n.position.x <= gX + gW + 40 &&
+          n.position.y >= gY - 40 &&
+          n.position.y <= gY + gH + 40,
+      );
+
+      if (candidates.length === 0) {
+        toast("Kéo các khối đặt vào hoặc đè lên khung nhóm rồi bấm nút này để gom vào.", "default");
+        return current;
+      }
+
+      // Repack candidates inside the group
+      const pad = 24;
+      const gap = 16;
+      const cols = Math.max(1, Math.ceil(Math.sqrt(candidates.length)));
+      const childW = 240;
+      const childH = 160;
+
+      const newPlacements = new Map<string, { x: number; y: number }>();
+      let y = pad + 32;
+      let maxW = 0;
+      for (let i = 0; i < candidates.length; i += cols) {
+        const row = candidates.slice(i, i + cols);
+        let x = pad;
+        for (const item of row) {
+          newPlacements.set(item.id, { x, y });
+          x += childW + gap;
+        }
+        maxW = Math.max(maxW, x - gap + pad);
+        y += childH + gap;
+      }
+      const newH = y - gap + pad;
+      const newW = Math.max(gW, maxW);
+
+      toast(`Đã gom ${candidates.length} khối vào "${groupData.label || "New Group"}"!`, "success");
+
+      return current.map((n) => {
+        if (n.id === id) {
+          return { ...n, data: { ...n.data, width: newW, height: newH } };
+        }
+        const place = newPlacements.get(n.id);
+        if (place) {
+          return {
+            ...n,
+            parentId: id,
+            extent: "parent" as const,
+            position: place,
+          };
+        }
+        return n;
+      });
+    });
+  }, [groupData.label, groupData.width, groupData.height, id, setNodes, toast]);
+
+  const handleTidy = useCallback(() => {
+    setNodes((current) => {
+      const children = current.filter((n) => n.parentId === id);
+      if (children.length === 0) return current;
+      const pad = 24;
+      const gap = 16;
+      const cols = Math.max(1, Math.ceil(Math.sqrt(children.length)));
+      const childW = 240;
+      const childH = 160;
+
+      let y = pad + 32;
+      let maxW = 0;
+      const updatedChildren = new Map<string, { x: number; y: number }>();
+      for (let i = 0; i < children.length; i += cols) {
+        const row = children.slice(i, i + cols);
+        let x = pad;
+        for (const item of row) {
+          updatedChildren.set(item.id, { x, y });
+          x += childW + gap;
+        }
+        maxW = Math.max(maxW, x - gap + pad);
+        y += childH + gap;
+      }
+      const newH = y - gap + pad;
+      const newW = Math.max(groupData.width ?? 360, maxW);
+
+      toast("Đã căn chỉnh gọn gàng các khối trong nhóm", "success");
+
+      return current.map((n) => {
+        if (n.id === id) {
+          return { ...n, data: { ...n.data, width: newW, height: newH } };
+        }
+        const place = updatedChildren.get(n.id);
+        if (place) {
+          return { ...n, position: place };
+        }
+        return n;
+      });
+    });
+  }, [groupData.width, id, setNodes, toast]);
+
+  const handleUngroup = useCallback(() => {
+    setNodes((current) => {
+      const group = current.find((n) => n.id === id);
+      if (!group) return current;
+      return current
+        .filter((n) => n.id !== id)
+        .map((n) => {
+          if (n.parentId !== id) return n;
+          const { parentId, extent, ...rest } = n;
+          void parentId;
+          void extent;
+          return {
+            ...rest,
+            position: {
+              x: group.position.x + n.position.x,
+              y: group.position.y + n.position.y,
+            },
+          };
+        });
+    });
+    toast("Đã rã nhóm (Ungroup)", "default");
+  }, [id, setNodes, toast]);
+
+  const handleDeleteGroup = useCallback(() => {
+    setNodes((current) => {
+      const memberIds = new Set(current.filter((n) => n.parentId === id).map((n) => n.id));
+      memberIds.add(id);
+      return current.filter((n) => !memberIds.has(n.id));
+    });
+    toast("Đã xoá nhóm và toàn bộ khối bên trong", "default");
+  }, [id, setNodes, toast]);
+
   return (
     <div
-      className={clsx("relative rounded-[28px] bg-[#2a2a2a]/75", selected && "outline outline-1 outline-white/40")}
-      style={{ width: groupData.width ?? 320, height: groupData.height ?? 220 }}
+      className={clsx(
+        "group/grp relative flex flex-col rounded-2xl border transition-all duration-200 select-none",
+        selected
+          ? "bg-[#141418]/85 ring-1 ring-white/30 border-white/40 shadow-2xl"
+          : "bg-[#111116]/60 hover:border-white/20 backdrop-blur-sm border-white/10",
+      )}
+      style={{ width: groupData.width ?? 360, height: groupData.height ?? 260 }}
     >
-      <input
-        value={groupData.label ?? "Nhóm mới"}
-        onChange={(event) => setLabel(event.target.value)}
-        className="nodrag absolute -top-6 left-1 bg-transparent text-[13px] text-white/90 outline-none"
-        placeholder="Nhóm mới"
-      />
+      {selected && (
+        <NodeToolbar
+          isVisible
+          position={Position.Top}
+          offset={12}
+          className="nodrag nopan flex items-center gap-1.5 rounded-full border border-white/15 bg-[#141418]/95 px-3 py-1.5 shadow-2xl backdrop-blur-md text-[12px] text-white z-50 select-none"
+        >
+          <button
+            type="button"
+            onClick={handleAbsorbNearby}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-neutral-200 hover:bg-white/10 hover:text-white transition"
+            title="Gom tất cả các khối đang nằm trên khung này vào nhóm"
+          >
+            <FolderInput size={13} className="text-amber-400" />
+            Gom khối vào
+          </button>
+          <button
+            type="button"
+            onClick={handleTidy}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-neutral-200 hover:bg-white/10 hover:text-white transition"
+            title="Căn chỉnh lưới các khối con"
+          >
+            <LayoutGrid size={13} />
+            Căn lưới
+          </button>
+          <span className="mx-0.5 h-3.5 w-px bg-white/20" />
+          <button
+            type="button"
+            onClick={handleUngroup}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-neutral-200 hover:bg-white/10 hover:text-white transition"
+            title="Rã nhóm (Ungroup)"
+          >
+            <Unlink size={13} />
+            Rã nhóm
+          </button>
+          <button
+            type="button"
+            onClick={handleDeleteGroup}
+            className="rounded-lg p-1 text-neutral-400 hover:bg-rose-500/20 hover:text-rose-300 transition"
+            title="Xoá cả nhóm"
+          >
+            <Trash2 size={13} />
+          </button>
+        </NodeToolbar>
+      )}
+
+      {/* Group Title: Positioned cleanly at top-left inside or above group */}
+      <div className="nodrag absolute -top-6 left-1 flex items-center gap-1.5 z-10">
+        <input
+          value={groupData.label ?? "New Group"}
+          onChange={(event) => setLabel(event.target.value)}
+          className="bg-transparent text-[12px] font-semibold text-neutral-400 hover:text-white focus:text-white focus:outline-none max-w-[200px] transition cursor-text tracking-wide"
+          placeholder="New Group"
+        />
+      </div>
     </div>
   );
 });

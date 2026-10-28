@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { ASSET_DIR } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -35,51 +36,51 @@ export async function GET(
   const contentType = MIME[ext] ?? "application/octet-stream";
   const stat = fs.statSync(full);
   const fileSize = stat.size;
+  const etag = `"${fileSize.toString(36)}-${Math.floor(stat.mtimeMs).toString(36)}"`;
+  // Cache in the browser: switching pages no longer re-downloads every image/video.
+  const cacheHeaders = {
+    "Cache-Control": "private, max-age=604800",
+    ETag: etag,
+    "Last-Modified": stat.mtime.toUTCString(),
+    "Accept-Ranges": "bytes",
+    "Content-Type": contentType,
+  };
+
+  if (request.headers.get("if-none-match") === etag) {
+    return new Response(null, { status: 304, headers: cacheHeaders });
+  }
+
+  // Always stream from disk (never readFileSync): a multi-hundred-MB video read
+  // synchronously blocked the whole Node process and froze every other request.
+  const stream = (start: number, end: number) =>
+    Readable.toWeb(fs.createReadStream(full, { start, end, highWaterMark: 1 << 20 })) as ReadableStream;
+
   const range = request.headers.get("range");
-
   if (range) {
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-    if (isNaN(start) || start >= fileSize || end >= fileSize || start > end) {
-      return new Response(null, {
-        status: 416,
-        headers: { "Content-Range": `bytes */${fileSize}` },
-      });
+    const [rawStart, rawEnd] = range.replace(/bytes=/, "").split("-");
+    let start = parseInt(rawStart, 10);
+    let end = rawEnd ? parseInt(rawEnd, 10) : fileSize - 1;
+    if (isNaN(start)) {
+      // suffix range: bytes=-N
+      const n = parseInt(rawEnd, 10);
+      start = Math.max(0, fileSize - n);
+      end = fileSize - 1;
     }
-
-    const chunksize = end - start + 1;
-    const fileStream = fs.createReadStream(full, { start, end });
-    const readable = new ReadableStream({
-      start(controller) {
-        fileStream.on("data", (chunk) => controller.enqueue(new Uint8Array(chunk as Buffer)));
-        fileStream.on("end", () => controller.close());
-        fileStream.on("error", (err) => controller.error(err));
-      },
-      cancel() {
-        fileStream.destroy();
-      },
-    });
-
-    return new Response(readable, {
+    end = Math.min(end, fileSize - 1);
+    if (isNaN(end) || start >= fileSize || start > end) {
+      return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${fileSize}` } });
+    }
+    return new Response(stream(start, end), {
       status: 206,
       headers: {
+        ...cacheHeaders,
         "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": String(chunksize),
-        "Content-Type": contentType,
+        "Content-Length": String(end - start + 1),
       },
     });
   }
 
-  const data = fs.readFileSync(full);
-  return new Response(new Uint8Array(data), {
-    headers: {
-      "Content-Type": contentType,
-      "Content-Length": String(fileSize),
-      "Accept-Ranges": "bytes",
-      "Cache-Control": "public, max-age=31536000, immutable",
-    },
+  return new Response(fileSize ? stream(0, fileSize - 1) : null, {
+    headers: { ...cacheHeaders, "Content-Length": String(fileSize) },
   });
 }

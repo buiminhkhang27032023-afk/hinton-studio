@@ -55,6 +55,7 @@ interface CanvasCopilotProps {
   onAddPromptNode: (text: string) => void;
   onAddStoryboard: (scenes: Array<{ title: string; prompt: string; modelKind?: "image" | "video" }>) => void;
   onUpdateSelectedNodeText: (text: string) => void;
+  onOpenScriptDirector?: () => void;
   projectName?: string;
 }
 
@@ -124,6 +125,7 @@ export function CanvasCopilot({
   onAddPromptNode,
   onAddStoryboard,
   onUpdateSelectedNodeText,
+  onOpenScriptDirector,
   projectName,
 }: CanvasCopilotProps) {
   const { toast } = useUi();
@@ -431,6 +433,19 @@ export function CanvasCopilot({
 
           {/* Quick suggestion prompt chips */}
           <div className="flex flex-wrap gap-1 border-t border-white/5 bg-white/[0.02] p-2">
+            {onOpenScriptDirector && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenScriptDirector();
+                }}
+                className="flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-[11px] font-semibold text-amber-300 transition hover:bg-amber-500/30 hover:text-white"
+              >
+                <Sparkles size={11} className="text-amber-400" />
+                ⚡ Mở Flova Script Director
+              </button>
+            )}
             {[
               "🎬 Kịch bản video 3 cảnh",
               "👗 Lookbook thời trang hè",

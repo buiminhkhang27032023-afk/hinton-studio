@@ -10,18 +10,29 @@ interface Toast {
   tone: "default" | "error" | "success";
 }
 
+export interface LightboxMedia {
+  url: string;
+  kind?: "image" | "video";
+  title?: string;
+  nodeId?: string;
+}
+
 interface UiState {
   lang: Lang;
   toasts: Toast[];
+  lightbox: LightboxMedia | null;
   setLang: (lang: Lang) => void;
   tr: (key: string) => string;
   toast: (message: string, tone?: Toast["tone"]) => void;
   dismiss: (id: string) => void;
+  openLightbox: (media: LightboxMedia) => void;
+  closeLightbox: () => void;
 }
 
 export const useUi = create<UiState>((set, get) => ({
   lang: "vi",
   toasts: [],
+  lightbox: null,
   setLang: (lang) => {
     set({ lang });
     if (typeof window !== "undefined") localStorage.setItem("atelier:lang", lang);
@@ -33,6 +44,8 @@ export const useUi = create<UiState>((set, get) => ({
     setTimeout(() => get().dismiss(id), 4200);
   },
   dismiss: (id) => set({ toasts: get().toasts.filter((toast) => toast.id !== id) }),
+  openLightbox: (lightbox) => set({ lightbox }),
+  closeLightbox: () => set({ lightbox: null }),
 }));
 
 export function initLang() {

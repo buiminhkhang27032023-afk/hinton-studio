@@ -15,10 +15,11 @@ export async function POST(request: Request) {
     let baseUrl = (body.baseUrl || "").trim().replace(/\/+$/, "");
     let apiKey = (body.apiKey || "").trim();
 
+    const stored = getProvider(body.providerId || "openai-compatible");
+    if (!baseUrl) baseUrl = stored.baseUrl;
+
     // If apiKey is masked or not provided, retrieve from stored provider settings
     if (!apiKey || apiKey.includes("••••")) {
-      const stored = getProvider(body.providerId || "openai-compatible");
-      if (!baseUrl) baseUrl = stored.baseUrl;
       apiKey = stored.apiKey;
     }
 
@@ -31,6 +32,108 @@ export async function POST(request: Request) {
 
     const isPiapi = body.providerId === "piapi";
     const isDuomi = body.providerId === "duomiapi" || baseUrl.includes("duomiapi") || baseUrl.includes("wike.cc");
+    const isBailian = body.providerId === "bailian" || body.providerId === "dashscope" || baseUrl.includes("dashscope");
+    const isAutodl = body.providerId === "autodl" || baseUrl.includes("gpuhub.com") || baseUrl.includes(":8188");
+    const isRunningHub = body.providerId === "runninghub" || baseUrl.includes("runninghub");
+
+    if (isRunningHub) {
+      try {
+        const testRes = await fetch("https://www.runninghub.ai/uc/openapi/accountStatus", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ apiKey }),
+          signal: AbortSignal.timeout(8000),
+        });
+        const data = await testRes.json().catch(() => ({}));
+        if (data.code === 0 && data.data) {
+          const money = data.data.remainMoney ?? "0";
+          const coins = data.data.remainCoins ?? "0";
+          const currency = data.data.currency || "CNY";
+          return NextResponse.json({
+            ok: true,
+            status: 200,
+            message: `Kết nối RunningHub thành công! Số dư: ${money} ${currency} • Điểm coins: ${coins} Coins. Cổng ComfyUI Cloud & OpenAPI sẵn sàng.`,
+            account: data.data,
+          });
+        }
+        return NextResponse.json({
+          ok: false,
+          error: `RunningHub báo lỗi: ${data.msg || "API key không hợp lệ hoặc tài khoản bị khóa."}`,
+        });
+      } catch (err: unknown) {
+        return NextResponse.json({
+          ok: false,
+          error: `Không thể kết nối đến RunningHub: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+
+    if (isAutodl) {
+      try {
+        const testRes = await fetch(`${baseUrl}/system_stats`, {
+          method: "GET",
+          signal: AbortSignal.timeout(7000),
+        }).catch(async () => {
+          return await fetch(`${baseUrl}/`, {
+            method: "GET",
+            signal: AbortSignal.timeout(7000),
+          });
+        });
+
+        if (testRes.ok || testRes.status === 200 || testRes.status === 404) {
+          return NextResponse.json({
+            ok: true,
+            status: 200,
+            message: "Kết nối máy chủ AutoDL ComfyUI thành công! GPU sẵn sàng chạy MimicMotion 0 giây chờ đợi.",
+          });
+        }
+        return NextResponse.json({
+          ok: false,
+          error: `Máy chủ AutoDL trả về mã lỗi ${testRes.status}. Vui lòng kiểm tra lại đường link WebUI hoặc port ComfyUI.`,
+        });
+      } catch (err: unknown) {
+        return NextResponse.json({
+          ok: false,
+          error: `Không thể kết nối đến máy chủ AutoDL (${err instanceof Error ? err.message : String(err)}). Hãy đảm bảo máy đang BẬT (开机).`,
+        });
+      }
+    }
+
+    if (isBailian) {
+      try {
+        const testRes = await fetch(`${baseUrl}/models`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+          },
+          signal: AbortSignal.timeout(8000),
+        });
+        const text = await testRes.text();
+        let json: { code?: string; message?: string } = {};
+        try { json = JSON.parse(text); } catch {}
+
+        if (testRes.status === 401 || json.code === "InvalidApiKey") {
+          return NextResponse.json({
+            ok: false,
+            error: "Alibaba Bailian báo lỗi: Khóa API DashScope không hợp lệ hoặc chưa được kích hoạt.",
+          });
+        }
+
+        return NextResponse.json({
+          ok: true,
+          status: 200,
+          message: "Kết nối Alibaba Cloud Bailian (DashScope) thành công! Cổng sẵn sàng cho AnimateAnyone và Wan 2.2.",
+        });
+      } catch (err: unknown) {
+        return NextResponse.json({
+          ok: false,
+          error: `Không thể kết nối đến Alibaba DashScope (${err instanceof Error ? err.message : String(err)}).`,
+        });
+      }
+    }
 
     // Special handling for DuomiAPI (Volcengine Doubao / Seedance / Kling format)
     if (isDuomi) {

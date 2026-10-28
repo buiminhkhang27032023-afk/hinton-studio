@@ -599,7 +599,7 @@ export default function QuickVideoPage() {
               {anchorUrl ? (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={withBasePath(anchorUrl)} alt="Ảnh tham chiếu" className="h-16 w-16 rounded-lg border border-ink-700 object-cover" />
+                  <img loading="lazy" decoding="async" src={withBasePath(anchorUrl)} alt="Ảnh tham chiếu" className="h-16 w-16 rounded-lg border border-ink-700 object-cover" />
                   <div className="flex flex-col gap-1.5">
                     <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] text-ink-300">
                       <input
@@ -711,7 +711,7 @@ export default function QuickVideoPage() {
             <div className="space-y-3">
               {done.map((item) => (
                 <div key={item.id} className="overflow-hidden rounded-xl border border-ink-700 bg-ink-850">
-                  <video src={withBasePath(item.url)} controls className="w-full" />
+                  <video src={withBasePath(item.url)} controls preload="metadata" className="w-full" />
                   <div className="flex items-center justify-between px-3 py-2">
                     <span className="truncate text-[11.5px] text-ink-300">{item.title}</span>
                     <a href={withBasePath(item.url)} download className="shrink-0 text-[11px] text-brass-400 hover:underline">
@@ -838,7 +838,7 @@ function SceneCard({
         >
           {scene.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={withBasePath(scene.imageUrl)} alt="" className="h-full w-full object-cover" />
+            <img loading="lazy" decoding="async" src={withBasePath(scene.imageUrl)} alt="" className="h-full w-full object-cover" />
           ) : (
             <span className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center text-[10.5px] text-ink-500">
               {uploading ? <Loader2 size={15} className="animate-spin" /> : <ImagePlus size={15} />}
@@ -918,7 +918,7 @@ function SceneCard({
         </span>
         <div className="flex items-center gap-1.5">
           {scene.result && (
-            <video src={withBasePath(scene.result.url)} className="h-8 w-14 rounded border border-ink-700 object-cover" muted />
+            <video src={`${withBasePath(scene.result.url)}#t=0.1`} preload="metadata" className="h-8 w-14 rounded border border-ink-700 object-cover" muted />
           )}
           {scene.result && onAnalyze && (
             <button onClick={onAnalyze} title="Phân tích video này" className="rounded-md p-1.5 text-ink-500 hover:bg-ink-750 hover:text-violet-soft">

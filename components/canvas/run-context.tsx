@@ -10,13 +10,14 @@ export function useRunNode() {
   return run ?? (async () => {});
 }
 
-type NodeMenuActions = {
+export type NodeMenuActions = {
   duplicate: (nodeId: string) => void;
   remove: (nodeId: string) => void;
+  reuse?: (nodeId: string) => void;
 };
 
 export const NodeMenuContext = createContext<NodeMenuActions | null>(null);
 
 export function useNodeMenu(): NodeMenuActions {
-  return useContext(NodeMenuContext) ?? { duplicate: () => {}, remove: () => {} };
+  return useContext(NodeMenuContext) ?? { duplicate: () => {}, remove: () => {}, reuse: () => {} };
 }
