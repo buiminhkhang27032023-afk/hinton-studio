@@ -3,7 +3,7 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
-const key = 's4Mb36Zll7ZoGdi68dqlpEck0N';
+const key = 'YOUR_DUOMI_KEY';
 const prjId = 'prj_zfold8_commercial_10s';
 const outDir = path.join('./data/assets', prjId);
 fs.mkdirSync(outDir, { recursive: true });

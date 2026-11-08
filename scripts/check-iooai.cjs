@@ -45,5 +45,27 @@ const input = {
   responses = [{ status: 502, body: { error: { message: 'upstream' } } }];
   await assert.rejects(mod.exports.runModel(input), /502/);
   assert.equal(calls.length, count + 1, 'Never resubmit paid IOOAI jobs automatically');
+  for (const providerId of ['openai-compatible', 'piapi', 'runninghub']) {
+    const previous = calls.length;
+    responses = [{ status: 502, body: { error: { message: 'upstream' } } }];
+    await assert.rejects(mod.exports.runModel({ ...input, providerId }), /502/);
+    assert.equal(calls.length, previous + 1, `No paid creation retry for ${providerId}`);
+  }
+  let savedId;
+  responses = [{ body: { task_id: 'task_keep' } }, { body: { status: 'failed', error: { message: 'domain_retired' } } }];
+  const beforeFailed = calls.length;
+  await assert.rejects(mod.exports.runModel({ ...input, onJobId: (id) => { savedId = id; } }), /domain_retired/);
+  assert.equal(savedId, 'task_keep');
+  assert.equal(calls.length, beforeFailed + 2, 'Terminal task failure cannot start a second generation');
+  responses = [{ body: { id: 'task_not_terminal' } }, { body: { status: 'in_progress', error: { code: 'upstream_error', message: 'domain_retired' } } }];
+  await assert.rejects(mod.exports.runModel(input), /Tác vụ chưa có kết quả/);
+  responses = [{ body: { id: 'ready-later', download_ready: false, output_url: 'https://example.com/not-ready.mp4' } },
+    { body: { status: 'completed', download_ready: true, output_url: 'https://example.com/ready.mp4' } }];
+  assert.equal((await mod.exports.runModel(input)).source, 'https://example.com/ready.mp4');
+  const fast = { ...input, model: 'iooai:seedance2.5 快速版', vars: { model: 'seedance2.5 快速版', images: ['https://example.com/image.jpg'] },
+    config: { endpoint: '/videos', body: { model: '{{model}}' }, resultPath: 'output_url' } };
+  responses = [{ body: { output_url: 'https://example.com/direct.mp4' } }];
+  await mod.exports.runModel(fast);
+  assert.equal(JSON.parse(calls.at(-1).init.body).model, 'seedance2.5 快速版', 'Never silently substitute a different paid model');
   console.log('IOOAI checks passed: payload, polling readiness, local-image rejection, no paid retry.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

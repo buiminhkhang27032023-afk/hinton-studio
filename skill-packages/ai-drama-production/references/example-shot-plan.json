@@ -1,0 +1,67 @@
+{
+  "title": "Dấu ấn giả — ví dụ biên soạn mới, chưa render",
+  "duration_s": 24,
+  "aspect_ratio": "16:9",
+  "fps": 24,
+  "characters": {
+    "F_LEAD": {"role": "Nữ chính trưởng thành, phát hiện ấn giả", "outfit": "Váy cổ trang xanh nhạt đã khóa"},
+    "M_LEAD": {"role": "Nam chính trưởng thành, điều tra án", "outfit": "Trường bào xanh đậm đã khóa"}
+  },
+  "assets": {
+    "F_FACE": {"path": "frames/F_LEAD_face.png", "role": "Chỉ nhận diện nữ chính"},
+    "M_FACE": {"path": "frames/M_LEAD_face.png", "role": "Chỉ nhận diện nam chính"},
+    "F_BODY": {"path": "frames/F_LEAD_body.png", "role": "Vóc dáng và trang phục nữ chính"},
+    "M_BODY": {"path": "frames/M_LEAD_body.png", "role": "Vóc dáng và trang phục nam chính"},
+    "LOC01": {"path": "frames/LOC01_master.png", "role": "Hành lang cố định, cửa trái, cửa sổ phải"}
+  },
+  "shots": [
+    {
+      "id": "S01_SH01", "scene": "S01", "location": "LOC01", "duration_s": 6,
+      "characters": ["F_LEAD", "M_LEAD"], "references": ["F_FACE", "M_FACE", "F_BODY", "M_BODY", "LOC01"],
+      "camera": "Toàn cảnh ngang mắt, 35mm dự kiến, máy cố định; nữ trái, nam phải",
+      "start_state": "Nữ trái nhìn xuống khay; nam phải giữ khay ngang eo bằng hai tay.",
+      "action": "Nữ chính bước nửa bước tới, dừng trước khay; nam chính đứng yên.",
+      "performance": "Nữ nheo mắt nhận ra dấu lạ, thở nhẹ qua mũi; nam quan sát bình tĩnh.",
+      "end_state": "Nữ trái đứng sát khay, nhìn con dấu; nam phải giữ khay ngang eo bằng hai tay.",
+      "dialogue": [],
+      "audio": "Gió nhẹ qua hành lang, một bước chân, không nhạc lúc sinh clip.",
+      "video_prompt": "Single locked eye-level wide shot, 6 seconds. Use each character's separate identity/outfit references and LOC01. Adult woman left takes half a step toward the tray held by the man right, then stops. Keep tray level at his waist, no handover. Her gaze settles on the seal. Stable faces, lighting and room geometry. No dialogue, no music, soft footsteps and corridor air."
+    },
+    {
+      "id": "S01_SH02", "scene": "S01", "location": "LOC01", "duration_s": 6,
+      "characters": ["F_LEAD", "M_LEAD"], "references": ["F_FACE", "F_BODY", "M_BODY", "LOC01"],
+      "camera": "Trung cận nữ ngang mắt, 50mm dự kiến, cùng phía trục, không đổi trái/phải",
+      "start_state": "Nữ trái đứng sát khay, nhìn con dấu; nam phải giữ khay ngang eo bằng hai tay.",
+      "action": "Nữ nhìn từ con dấu lên nam chính, không chạm đạo cụ.",
+      "performance": "Môi siết nhẹ rồi nói nhỏ; ánh mắt từ nghi ngờ chuyển chắc chắn, thở bình thường.",
+      "end_state": "Nữ trái nhìn nam; nam phải giữ khay ngang eo bằng hai tay.",
+      "dialogue": [{"speaker": "F_LEAD", "text": "Ấn này không phải của phụ thân ta.", "language": "vi", "delivery": "Nhỏ, chắc chắn, một nhịp ngừng sau Ấn này"}],
+      "audio": "Thoại TTS riêng, nền gió nhẹ; clip không tự sinh tiếng nói.",
+      "video_prompt": "Single eye-level medium close shot of the adult woman, 6 seconds. Preserve F_FACE and outfit. Same corridor and axis, man remains off to screen right holding the tray. She lifts her gaze from the seal to him, subtle recognition becoming certainty. No touching or transferring props. Reserve space for separately recorded Vietnamese dialogue; do not generate speech or music."
+    },
+    {
+      "id": "S01_SH03", "scene": "S01", "location": "LOC01", "duration_s": 6,
+      "characters": ["F_LEAD", "M_LEAD"], "references": ["F_BODY", "M_FACE", "M_BODY", "LOC01"],
+      "camera": "Trung cận nam ngang mắt, 50mm dự kiến, reverse shot cùng phía trục",
+      "start_state": "Nữ trái nhìn nam; nam phải giữ khay ngang eo bằng hai tay.",
+      "action": "Nam nhìn nữ chính, dừng một nhịp rồi hỏi, khay không di chuyển.",
+      "performance": "Chân mày hạ nhẹ, giọng thấp; không gằn, không thở gấp.",
+      "end_state": "Nữ trái nhìn nam; nam phải nhìn nữ, giữ khay ngang eo bằng hai tay.",
+      "dialogue": [{"speaker": "M_LEAD", "text": "Vậy ai đã đặt nó trong thư phòng?", "language": "vi", "delivery": "Thấp, chậm, chất vấn kín đáo"}],
+      "audio": "Thoại TTS riêng; ambience liền shot trước.",
+      "video_prompt": "Single locked eye-level reverse medium close shot of the adult man, 6 seconds. Preserve M_FACE and outfit, same axis and lighting. He looks toward the woman at screen left, pauses, then forms a restrained questioning expression. Tray stays level in both hands. Separately recorded dialogue will be added in edit; generate no speech or music."
+    },
+    {
+      "id": "S01_SH04", "scene": "S01", "location": "LOC01", "duration_s": 6,
+      "characters": ["F_LEAD", "M_LEAD"], "references": ["F_FACE", "M_FACE", "F_BODY", "M_BODY", "LOC01"],
+      "camera": "Trung cảnh hai người ngang mắt, 35mm dự kiến, máy cố định",
+      "start_state": "Nữ trái nhìn nam; nam phải nhìn nữ, giữ khay ngang eo bằng hai tay.",
+      "action": "Nghe tiếng cửa cót két bên trái, cả hai lần lượt quay mắt rồi quay đầu về cửa.",
+      "performance": "Nữ ngừng nói, nam căng hàm nhẹ; không giật nảy, không tự di chuyển khay.",
+      "end_state": "Hai người nhìn cửa bên trái; khay vẫn ngang eo nam bằng hai tay.",
+      "dialogue": [],
+      "audio": "Một tiếng cửa gỗ cót két offscreen bên trái, rồi im lặng và ambience.",
+      "video_prompt": "Single locked eye-level two shot, 6 seconds. Woman left, man right with tray in both hands. Same approved room. An offscreen wooden door creaks on the left; their eyes shift first, then heads turn naturally toward the sound, staggered slightly. No new person enters. Keep identities, tray and lighting stable. No dialogue or music; one soft door creak and corridor air."
+    }
+  ]
+}

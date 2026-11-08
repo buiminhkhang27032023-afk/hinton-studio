@@ -9,6 +9,7 @@ export type ProviderId =
   | "deepseek"
   | "openrouter"
   | "groq"
+  | "muse"
   | "bailian"
   | "autodl"
   | "kling"
@@ -39,6 +40,7 @@ export const PROVIDER_METAS: ProviderMeta[] = [
   { id: "deepseek", label: "DeepSeek Official API", short: "DeepSeek", badge: "DEEPSEEK", icon: "🤖" },
   { id: "openrouter", label: "OpenRouter Unified Gateway", short: "OpenRouter", badge: "ROUTER", icon: "🧭" },
   { id: "groq", label: "Groq Cloud (LPU Ultra Fast)", short: "Groq", badge: "GROQ", icon: "⚡" },
+  { id: "muse", label: "Muse AI Gateway (MuseTalk LipSync / MuseV / MuseVoice)", short: "Muse AI", badge: "MUSE", icon: "🎭" },
   { id: "openai-compatible", label: "Cổng OpenAI Tùy Chỉnh", short: "Tùy chỉnh", badge: "CUSTOM", icon: "⚙️" },
 ];
 
@@ -58,6 +60,7 @@ export function resolveProvider(model: { id?: string; provider?: string } | null
   if (pid === "deepseek" || mid.startsWith("deepseek:")) return "deepseek";
   if (pid === "openrouter" || mid.startsWith("openrouter:")) return "openrouter";
   if (pid === "groq" || mid.startsWith("groq:")) return "groq";
+  if (pid === "muse" || mid.startsWith("muse:") || mid.includes("musetalk") || mid.includes("musev") || mid.includes("musevoice")) return "muse";
   if (pid === "provider" || mid.startsWith("buihuuthang/")) return "provider";
   if (pid === "openai-compatible" || mid.startsWith("seed:")) return "openai-compatible";
   return (pid as ProviderId) || "openai-compatible";
@@ -72,6 +75,21 @@ export function getProviderMeta(providerId: string | null | undefined): Provider
 export function durationOptions(modelId?: string | null): number[] {
   if (!modelId) return [5, 10, 15];
   const mid = modelId.toLowerCase();
+
+  // ByteDance Seedance 2.5 AT / LJ (5-30s tự do)
+  if (mid.includes("seedance2.5 at") || mid.includes("seedance2.5 lj")) {
+    return [5, 10, 15, 20, 25, 30];
+  }
+
+  // ByteDance Seedance 2.0 Mini 全参 (4-15s)
+  if (mid.includes("全参")) {
+    return [4, 5, 6, 8, 10, 12, 15];
+  }
+
+  // ByteDance Seedance 2.5 官渠 (chính ngạch hỗ trợ 4-30s tự do)
+  if (mid.includes("官渠")) {
+    return [5, 10, 15, 20, 30];
+  }
 
   // ByteDance Seedance 2.5 快速版 only allows 15s or 30s
   if (mid.includes("快速版") || (mid.includes("seedance2.5") && !mid.includes("lw"))) {
@@ -126,6 +144,8 @@ export function durationOptions(modelId?: string | null): number[] {
 export function getDefaultDuration(modelId?: string | null): number {
   if (!modelId) return 10;
   const mid = modelId.toLowerCase();
+  if (mid.includes("seedance2.5 at") || mid.includes("seedance2.5 lj")) return 15;
+  if (mid.includes("全参")) return 15;
   if (mid.includes("快速版") || (mid.includes("seedance2.5") && !mid.includes("lw"))) return 15;
   if (mid.includes("线路三") || mid.includes("线路二")) return 30;
   if (mid.includes("特价")) return 15;

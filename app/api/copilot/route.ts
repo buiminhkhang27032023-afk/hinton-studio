@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { pausedModelResponse } from "@/lib/model-call-guard";
 import { getProvider } from "@/lib/provider";
 
 export const runtime = "nodejs";
@@ -19,6 +20,7 @@ VAI TRÒ VÀ NĂNG LỰC CỦA BẠN:
      * Trợ lý Bậc Thầy (Prompt Master): Tối ưu câu lệnh thô sơ thành Master Prompt điện ảnh.
      * Ảnh / Video (Media): Tải lên hoặc hiển thị ảnh tham chiếu (ảnh người mẫu, ảnh trang phục, video gốc).
      * Tạo (Generate): Chạy các model AI đỉnh cao (Seedance, Veo, Omni Flash, Kling, Flux).
+     * Giọng nói & Lồng tiếng (VoiceNode / OmniVoice): Tạo giọng nói AI, clone từ âm thanh mẫu, thiết kế giọng bằng văn bản (Voice Design) và tham chiếu bằng cú pháp [@Audio 1].
      * Phối đồ / Thay đồ (Fashion Try-on & Compose): Thử đồ ảo cho người mẫu, ghép video thời trang.
      * Nâng cấp (Upscale) & Kết quả (Result): Xem kết quả video/ảnh full size, nâng độ phân giải lên 4K.
    - Cách nối dây (Wiring):
@@ -26,7 +28,12 @@ VAI TRÒ VÀ NĂNG LỰC CỦA BẠN:
      * Cổng ra (Out - màu vàng hổ phách): Ở bên Phải, Trên (Top), Dưới (Bottom), và cổng phụ bên Trái.
      * Có thể nối đa hướng (ngang, dọc, chéo) mà không sợ bị trùng hay rối dây.
 
-3. TƯƠNG TÁC TRỰC TIẾP VỚI CANVAS (CỰC KỲ QUAN TRỌNG):
+3. QUY TẮC THAM CHIẾU TRONG PROMPT (BẮT BUỘC):
+- Khi cần tham chiếu ảnh nhân vật, người mẫu, trang phục hoặc bối cảnh, BẮT BUỘC sử dụng cú pháp chuẩn của mô hình AI: [@Image 1], [@Image 2]... (ví dụ: "[@Image 1]: Giữ đúng khuôn mặt và trang phục. [@Image 2]: Bối cảnh sườn đê cạnh bờ sông...").
+- Khi có âm thanh lồng tiếng / giọng nói kết nối vào cảnh, sử dụng cú pháp [@Audio 1] để đồng bộ thoại hoặc khẩu hình nhân vật.
+- TUYỆT ĐỐI KHÔNG tự sáng tác các tag tiếng Việt có gạch dưới như @Ảnh_bối_cảnh_tổng hay @Ảnh_cầu_thang vì các mô hình video AI (IOOAI Omni, Seedance) không hiểu được và sẽ báo lỗi!
+
+4. TƯƠNG TÁC TRỰC TIẾP VỚI CANVAS (CỰC KỲ QUAN TRỌNG):
 Khi bạn đề xuất câu lệnh hoặc kịch bản, hãy đính kèm khối Action dạng markdown code block để người dùng có thể bấm 1 nút là đưa ngay lên Canvas:
 
 - Gợi ý 1 Prompt đơn lẻ:
@@ -67,6 +74,8 @@ PHONG CÁCH TRẢ LỜI:
 - Luôn khuyến khích sáng tạo và đưa ra các đề xuất cụ thể, khả thi.`;
 
 export async function POST(request: Request) {
+  const paused = pausedModelResponse();
+  if (paused) return paused;
   try {
     const body = (await request.json()) as {
       messages?: Array<{ role: "system" | "user" | "assistant"; content: string }>;

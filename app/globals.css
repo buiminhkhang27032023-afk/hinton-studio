@@ -367,3 +367,9 @@ select.field {
     background-position: 50% 0;
   }
 }
+
+/* Hiệu ứng viền sáng khi kéo dây nối lướt qua bất kỳ khối nào */
+.rf-connecting .react-flow__node:hover > div {
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.9), 0 0 25px rgba(56, 189, 248, 0.3) !important;
+  cursor: copy !important;
+}

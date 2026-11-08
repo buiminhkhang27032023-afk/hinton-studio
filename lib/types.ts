@@ -1,4 +1,4 @@
-export type ModelKind = "chat" | "image" | "video" | "upscale" | "train";
+export type ModelKind = "chat" | "image" | "video" | "upscale" | "train" | "audio" | "voice";
 
 export type AssetKind = "image" | "video" | "audio" | "file";
 
@@ -56,6 +56,9 @@ export interface ModelConfig {
   headers?: Record<string, string>;
   /** Seconds to wait before giving up on a sync request. */
   timeout?: number;
+  /** Provider-recommended initial wait and cadence for read-only polling. */
+  initialPollDelaySeconds?: number;
+  pollIntervalSeconds?: number;
 }
 
 export interface ModelRecord {
@@ -85,7 +88,7 @@ export interface JobRecord {
   nodeId: string | null;
   kind: ModelKind;
   model: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "pending" | "succeeded" | "failed";
   input: Record<string, unknown>;
   output?: Asset | null;
   error?: string | null;

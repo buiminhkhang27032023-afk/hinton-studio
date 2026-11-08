@@ -9,6 +9,7 @@ import {
   OPENROUTER_PROVIDER,
   GROQ_PROVIDER,
   BAILIAN_PROVIDER,
+  MUSE_PROVIDER,
   AUTODL_PROVIDER,
   getProvider,
 } from "@/lib/provider";
@@ -28,6 +29,7 @@ export async function GET() {
   const openrouter = getProvider("openrouter");
   const groq = getProvider("groq");
   const bailian = getProvider("bailian");
+  const muse = getProvider("muse");
   const autodl = getProvider("autodl");
 
   const rawCustom = getSetting<Array<{ id: string; name: string; baseUrl: string; apiKey: string; icon?: string }>>(
@@ -48,6 +50,7 @@ export async function GET() {
     hasKey: Boolean(provider.apiKey),
     baseUrlDefault: DEFAULT_PROVIDER.baseUrl,
     language: getSetting("language", "vi"),
+    modelCallsPaused: getSetting<boolean>("model_calls_paused", false) === true,
     activeProvider,
     duomiapi: {
       baseUrl: duomiapi.baseUrl || DUOMIAPI_PROVIDER.baseUrl,
@@ -90,6 +93,11 @@ export async function GET() {
       apiKey: groq.apiKey ? `••••${groq.apiKey.slice(-4)}` : "",
       hasKey: Boolean(groq.apiKey),
     },
+    muse: {
+      baseUrl: muse.baseUrl || "https://api.musetalk.ai/v1",
+      apiKey: muse.apiKey ? `••••${muse.apiKey.slice(-4)}` : "",
+      hasKey: Boolean(muse.apiKey),
+    },
     bailian: {
       baseUrl: bailian.baseUrl || BAILIAN_PROVIDER.baseUrl,
       apiKey: bailian.apiKey ? `••••${bailian.apiKey.slice(-4)}` : "",
@@ -100,6 +108,8 @@ export async function GET() {
       apiKey: autodl.apiKey ? `••••${autodl.apiKey.slice(-4)}` : "",
       hasKey: Boolean(autodl.apiKey),
     },
+    elevenlabsApiKey: getSetting<string>("elevenlabs_api_key", ""),
+    hasElevenLabsKey: Boolean(getSetting<string>("elevenlabs_api_key", "") || process.env.ELEVENLABS_API_KEY),
     customProviders,
   });
 }
@@ -129,6 +139,9 @@ export async function PUT(request: Request) {
     groqApiKey?: string;
     groqBaseUrl?: string;
     groqClearKey?: boolean;
+    museApiKey?: string;
+    museBaseUrl?: string;
+    museClearKey?: boolean;
     bailianApiKey?: string;
     bailianBaseUrl?: string;
     bailianClearKey?: boolean;
@@ -263,6 +276,20 @@ export async function PUT(request: Request) {
     setSetting("provider_groq", nextGroq);
   }
 
+  // Muse AI Gateway
+  if (typeof body.museApiKey === "string" || body.museClearKey || typeof body.museBaseUrl === "string") {
+    const curMuse = getSetting<Partial<ProviderSettings>>("provider_muse", {});
+    const nextMuse: Partial<ProviderSettings> = { ...curMuse };
+    if (body.museClearKey) nextMuse.apiKey = "";
+    else if (body.museApiKey && body.museApiKey.trim() && !body.museApiKey.includes("••••")) {
+      nextMuse.apiKey = body.museApiKey.trim();
+    }
+    if (typeof body.museBaseUrl === "string" && body.museBaseUrl.trim()) {
+      nextMuse.baseUrl = body.museBaseUrl.trim().replace(/\/+$/, "");
+    }
+    setSetting("provider_muse", nextMuse);
+  }
+
   // Alibaba Bailian
   if (typeof body.bailianApiKey === "string" || body.bailianClearKey || typeof body.bailianBaseUrl === "string") {
     const curBailian = getSetting<Partial<ProviderSettings>>("provider_bailian", {});
@@ -289,6 +316,18 @@ export async function PUT(request: Request) {
       nextAutodl.baseUrl = body.autodlBaseUrl.trim().replace(/\/+$/, "");
     }
     setSetting("provider_autodl", nextAutodl);
+  }
+
+  // ElevenLabs API Key
+  if (typeof body.elevenlabsApiKey === "string" && !body.elevenlabsApiKey.includes("••••")) {
+    const trimmed = body.elevenlabsApiKey.trim();
+    setSetting("elevenlabs_api_key", trimmed);
+    setSetting("provider_elevenlabs", {
+      ...getSetting<Partial<ProviderSettings>>("provider_elevenlabs", {}),
+      baseUrl: "https://api.elevenlabs.io/v1",
+      apiKey: trimmed,
+      authHeader: "x-api-key",
+    });
   }
 
   // Custom Gateways List

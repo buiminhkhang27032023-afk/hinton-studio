@@ -25,6 +25,8 @@ const KIND_LABEL: Record<ModelKind, string> = {
   upscale: "Upscale",
   train: "Train",
   chat: "Chat / phân tích",
+  audio: "Âm thanh",
+  voice: "Giọng nói",
 };
 
 const KIND_TONE: Record<ModelKind, "brass" | "violet" | "green" | "red" | "default"> = {
@@ -33,6 +35,8 @@ const KIND_TONE: Record<ModelKind, "brass" | "violet" | "green" | "red" | "defau
   upscale: "green",
   train: "red",
   chat: "default",
+  audio: "brass",
+  voice: "brass",
 };
 
 const EMPTY: ModelRecord = {

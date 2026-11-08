@@ -2,18 +2,18 @@
 
 import { createContext, useContext } from "react";
 
-/** Lets a node trigger its own run without prop-drilling through React Flow. */
-export const RunNodeContext = createContext<((nodeId: string) => Promise<void>) | null>(null);
+export type RunNodeFn = (id: string, options?: { clearPrior?: boolean }) => void;
 
-export function useRunNode() {
-  const run = useContext(RunNodeContext);
-  return run ?? (async () => {});
+export const RunNodeContext = createContext<RunNodeFn | null>(null);
+
+export function useRunNode(): RunNodeFn {
+  return useContext(RunNodeContext) ?? (() => {});
 }
 
 export type NodeMenuActions = {
-  duplicate: (nodeId: string) => void;
-  remove: (nodeId: string) => void;
-  reuse?: (nodeId: string) => void;
+  duplicate: (id: string) => void;
+  remove: (id: string) => void;
+  reuse?: (nodeId: string, customUrl?: string, customKind?: "image" | "video", customName?: string) => void;
 };
 
 export const NodeMenuContext = createContext<NodeMenuActions | null>(null);

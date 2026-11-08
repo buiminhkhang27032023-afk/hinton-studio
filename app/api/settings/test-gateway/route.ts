@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { pausedModelResponse } from "@/lib/model-call-guard";
 import { getProvider } from "@/lib/provider";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const paused = pausedModelResponse();
+  if (paused) return paused;
   try {
     const body = (await request.json()) as {
       providerId?: string;
@@ -35,6 +38,41 @@ export async function POST(request: Request) {
     const isBailian = body.providerId === "bailian" || body.providerId === "dashscope" || baseUrl.includes("dashscope");
     const isAutodl = body.providerId === "autodl" || baseUrl.includes("gpuhub.com") || baseUrl.includes(":8188");
     const isRunningHub = body.providerId === "runninghub" || baseUrl.includes("runninghub");
+    const isElevenLabs = body.providerId === "elevenlabs" || baseUrl.includes("elevenlabs");
+
+    if (isElevenLabs) {
+      try {
+        const testRes = await fetch("https://api.elevenlabs.io/v1/user", {
+          method: "GET",
+          headers: {
+            "xi-api-key": apiKey,
+          },
+          signal: AbortSignal.timeout(10000),
+        });
+        const data = await testRes.json().catch(() => ({}));
+        if (testRes.ok) {
+          const charCount = data.subscription?.character_count ?? 0;
+          const charLimit = data.subscription?.character_limit ?? 0;
+          const tier = data.subscription?.tier || "active";
+          return NextResponse.json({
+            ok: true,
+            status: 200,
+            message: `Kết nối ElevenLabs thành công! Gói: ${tier.toUpperCase()} • Đã dùng: ${charCount}/${charLimit} ký tự. Sẵn sàng lồng tiếng Flash v2.5 Tiếng Việt & SFX!`,
+            account: data,
+          });
+        }
+        return NextResponse.json({
+          ok: false,
+          error: `ElevenLabs báo lỗi (${testRes.status}): ${data.detail?.message || data.detail?.status || JSON.stringify(data.detail) || "Khóa API không hợp lệ hoặc đã hết hạn."}`,
+        });
+      } catch (err: unknown) {
+        return NextResponse.json({
+          ok: false,
+          error: `Không thể kết nối đến ElevenLabs: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+
 
     if (isRunningHub) {
       try {

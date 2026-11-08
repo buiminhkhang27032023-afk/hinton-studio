@@ -3,6 +3,7 @@ import path from "node:path";
 import { ASSET_DIR, getDb, now, uid } from "./db";
 import type { Asset, AssetKind } from "./types";
 import { externalizeInline } from "./inline-media";
+import { validateVideoBytes } from "./video-task";
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/png": "png",
@@ -150,6 +151,10 @@ export async function persistRemoteAsset(opts: {
     buffer = Buffer.from(await res.arrayBuffer());
   }
 
+  if (opts.fallbackMime?.startsWith("video/") || mime.startsWith("video/")) {
+    validateVideoBytes(buffer, mime);
+    if (!mime.startsWith("video/")) mime = opts.fallbackMime ?? "video/mp4";
+  }
   return saveAsset({
     projectId: opts.projectId,
     name: opts.name,

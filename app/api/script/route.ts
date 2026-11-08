@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { pausedModelResponse } from "@/lib/model-call-guard";
 import { getProvider } from "@/lib/provider";
 import { planScenes, allowedDurations } from "@/lib/scene-plan";
 import { presetPromptBlock, getPreset } from "@/lib/presets";
@@ -22,6 +23,8 @@ interface Scene {
  * batch never falls short of the requested length.
  */
 export async function POST(request: Request) {
+  const paused = pausedModelResponse();
+  if (paused) return paused;
   const body = (await request.json()) as {
     idea?: string;
     totalSeconds?: number;

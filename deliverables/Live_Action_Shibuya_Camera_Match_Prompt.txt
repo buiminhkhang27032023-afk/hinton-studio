@@ -1,0 +1,80 @@
+LIVE-ACTION CAMERA-MATCH PROMPT — SHIBUYA ENCOUNTER
+HƯỚNG DẪN: Thay từng thẻ @ bên dưới bằng đúng tài nguyên. Dùng video 3D để tham chiếu chuyển động, không dùng nó làm ảnh đầu hoặc phong cách đầu ra. Video kết trước va chạm thì giữ nguyên điểm kết; cảnh va chạm làm ở clip tiếp. Prompt không bảo đảm tái dựng chính xác tuyệt đối camera từ một video tham chiếu.
+
+BEGIN GENERATION PROMPT
+Create a finished LIVE-ACTION cinematic shot featuring realistic human actors in a contemporary Japanese metropolis. Reconstruct the supplied previs camera choreography and character blocking as faithfully as possible. This is a filmed-human scene, not an animated movie. The 3D reference is a technical movement guide only. Replace all primitive bodies, synthetic materials and graybox buildings with photographic people, clothing and urban architecture. Match the reference duration and aspect ratio; do not arbitrarily compress or extend the action.
+
+REFERENCES
+@Video_mo_hinh_3D: Primary camera and blocking guide.
+@Anh_mat_nam_chinh: Primary male facial identity; the original real-person portrait.
+@Anh_nam_chinh_da_goc: Male face, haircut, physique and black suit across angles.
+@Anh_nu_phu_da_goc: Adult female supporting character identity, hairstyle, physique and modern outfit.
+@Anh_boi_canh_ngang: Street-level view of the Japanese scramble intersection.
+@Anh_boi_canh_tren_cao: Aerial view of the same location.
+@Anh_dao_cu: Three modern paperbacks and one dusty-red zippered fabric pouch.
+
+REFERENCE HIERARCHY
+Camera trajectory, timing, screen placement, ground paths and character orientation come from the previs. Facial identity comes from the person references. Clothing comes from the final approved costume sheets. Architecture, signage shapes and evening atmosphere come from the background images. The props come from the prop image. Do not copy studio backgrounds, panel dividers, palette swatches or multiple views into the film. If environment images look illustrated, translate their architecture and colors into a photographic live-action location. Never copy their illustration style onto skin or buildings.
+
+CAST REPLACEMENT
+GREEN placeholder = male protagonist A.
+RED placeholder = female supporting character.
+The placeholder colors are identification codes, not instructions to recolor the actors.
+Replace the markers at their corresponding positions; do not include green or red capsules in the output. There is exactly one of each featured actor. Both are adults.
+
+MALE IDENTITY AND COSTUME
+Preserve the real man's recognizable facial proportions, eye shape, nose, lips, ears, natural skin tone and short slightly tousled black hair. Retain pores and subtle facial asymmetry. No generic celebrity face, sharpened jaw, artificial whitening, exaggerated height or muscular body replacement. His proportions must remain consistent from close to distant views.
+Dress him in the final approved black three-piece outfit: black double-breasted jacket with peak lapels and silver buttons, black double-breasted waistcoat, white dress shirt, white satin tie with small silver ornament, white pocket square on his left chest, circular silver lapel brooch and chain on the left, black trousers and polished black Oxford shoes. Match the wristwatch if present. Maintain the correct anatomical side of accessories through turns. Real tailoring follows his body, with natural fabric folds and weight.
+
+FEMALE IDENTITY AND BELONGINGS
+Preserve the referenced adult woman's face, hairstyle, skin tone, body proportions and approved contemporary outfit. Do not substitute historical dress or invent a new costume.
+She carries exactly three modern paperback books supported against her torso: yellow top cover, sage-green middle cover, navy bottom cover. A small dusty-red zippered pouch rests on the stack. Match their scale and colors to the prop reference. Her hands visibly support their weight. Objects must not float, intersect her fingers, multiply or change into another bag.
+
+CAMERA RECONSTRUCTION
+Analyze the entire previs before composing the shot. Follow its actual sequence and timing rather than inventing a separate edit.
+Reproduce the elevated downward opening view over A, camera advance and descent, low upward-looking phase, subsequent arc around him, and widening pullback revealing the junction and female character. The actual video decides which side the arc uses and when each movement happens.
+Match apparent lens perspective, camera height, tilt, pan, roll, viewing direction, distance to subject and acceleration. Keep roll level unless the reference deliberately rolls. Match the subject's size and position within the frame at successive moments. Preserve changes in foreground/background parallax.
+Camera translation is not digital zoom. A downward crane move physically changes height and occlusion. An orbit changes viewing azimuth and background alignment. A backward dolly increases camera distance. Use lens zoom only where the reference actually calls for that perspective behavior.
+Keep architectural edges stable. No breathing buildings, elastic streets or background texture sliding independently of camera motion. Follow a clear route around physical obstacles. Never pass through a person, curb fixture, wall, tree, vehicle or building.
+If the reference is one continuous take, retain one continuous take without hidden redesign. If it contains cuts, match their timing and view changes only. No extra drone opening, reaction close-up, reverse shot, hero pose or random dramatic camera movement.
+Motion must remain smooth and cinematic without robotic stops, uncontrolled shake, speed ramps or artificial slow motion absent from the reference.
+
+CHARACTER BLOCKING
+Match A's starting ground location and heading. He walks toward the intersection along the referenced route while the camera moves. Keep natural stride length, alternating steps, pelvis motion and restrained arm swing. Feet plant without skating; weight transfers through the knees and hips.
+Keep A centered or offset exactly as the reference requires, rather than following a generic composition rule that moves him elsewhere.
+Introduce the female character at the same moment and same screen side as the RED marker. Preserve her route, facing direction, walking pace and changing distance from A. Her route must intersect his only where the previs establishes it.
+Do not have either actor pose toward the lens unless the reference contains that action. Use natural forward attention, brief environmental glances and restrained anticipation. Body size must not change while moving toward or away from camera.
+
+ENDING AND COLLISION
+The supplied previs was observed to end with the characters approaching, before a completed collision. Respect the supplied version's actual final action. Do not force a shoulder bump, falling books, crouching or a hand-touch into a camera-matching clip that ends before contact. Finish at the same relative positions and movement phase, with both actors still naturally moving.
+If a revised reference explicitly includes contact, reproduce it at its actual time: shoulder contact causes a small upper-body reaction and short balancing step, followed by loss of support to the books. Do not invent an impact in the unchanged reference.
+For any shown object drop: three books separate and rotate under gravity; pages flex, ground contact causes small bounce or slide, the pouch deforms slightly on landing. No contents spill from the closed zipper. Preserve object count and final positions. This clause applies only when the reference contains the action.
+
+LIVE-ACTION ENVIRONMENT
+Render a convincing Shibuya-inspired Japanese metropolitan scramble crossing at blue hour: diagonal zebra crossings, dense commercial towers, glass facades, illuminated billboard panels, pedestrian signals, curb ramps, tactile paving, road markings and realistic asphalt.
+Use both environment images as views of one location. Match road branches, corner positions, landmark facades and usable sidewalks. Fit these surfaces to the previs's movement geometry. Do not treat a single still as a flat backdrop or change districts during the orbit.
+Maintain recognizable major building relationships and crossing directions as perspective changes. Actors must have plausible human scale relative to curbs, doors and railings.
+Use restrained pavement reflections consistent with actual surface moisture. No unexplained rainfall, extreme wet-look road, traditional roofs or fantasy neon city.
+
+CROWD AND TRAFFIC
+Populate sidewalks and distant crossing areas with adults in contemporary clothing. Background people follow independent believable paths and remain secondary. Keep the actors' approach and possible contact zone readable.
+No prominent extra passes directly across their faces or hides the important blocking. Some incidental occlusion at distance is acceptable only if it preserves readability.
+Traffic obeys the pedestrian phase: vehicles wait behind stop lines when pedestrians cross. No car passes through the actors' route. Maintain coherent vehicle scale, wheel contact, direction and road position. No sudden vehicle spawns or cloned crowd loops.
+
+PHOTOGRAPHIC LIGHTING
+Use cool ambient sky fill and warmer storefront, streetlamp and advertising spill. Light wraps naturally around real facial planes. Skin remains photographic with pores and soft subsurface warmth, never wax, plastic, porcelain or cel shading.
+Changes in illumination follow movement relative to sources. A screen may create a subtle colored edge highlight, not repaint the whole face each frame.
+Include soft contact shadows under shoes, under supported books and at hand-to-object contact. Preserve coherent world-space shadow directions through camera turns. Light does not rotate with the camera.
+Show realistic suit weave, lapel sheen, shirt folds, fine hair strands, leather shoe highlights and small metal reflections. Avoid glowing outlines, excessive bloom, game-engine shine and oversharpened skin.
+Use believable depth of field: faces stay readable when featured; wider frames retain enough architecture to explain space. Restrained motion blur follows exposure and camera speed, without smearing identity.
+
+PERFORMANCE AND SOUND
+Natural breathing, blinking, eye focus and small expression changes. Clothing and hair respond to steps and light breeze with delayed inertia. Keep the tie and lapel chain physically attached.
+For the camera-matching take, use city ambience, distant traffic, walking sounds and subtle fabric movement. No invented dialogue that changes the reference timing. Any later dialogue should be assigned separately in the collision continuation.
+No subtitles, titles, logos, credits or music-video effects.
+
+FINAL QUALITY REQUIREMENTS
+The output should resemble actors photographed on a real contemporary city street, using the supplied 3D shot as blocking rehearsal. No capsule people, mannequins, polygon meshes, clay render, graybox architecture, videogame characters, CGI-looking humans, anime faces, cartoon buildings or synthetic doll skin.
+No identity drift, duplicate actors, disappearing props, incorrect hands, sliding feet, changing costumes, reversed accessories, impossible camera paths, distorted lens jumps, frozen ending, black transition or fade-out. Preserve the reference's action and ending, with photographic live-action detail.
+END GENERATION PROMPT
+

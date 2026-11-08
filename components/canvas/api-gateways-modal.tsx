@@ -34,6 +34,16 @@ interface GatewayConfig {
 
 const PRESET_GATEWAYS: Array<Omit<GatewayConfig, "apiKey" | "hasKey" | "baseUrl"> & { defaultUrl: string }> = [
   {
+    id: "elevenlabs",
+    name: "ElevenLabs AI Audio",
+    short: "ElevenLabs",
+    icon: "🎙️",
+    badge: "ELEVENLABS",
+    defaultUrl: "https://api.elevenlabs.io/v1",
+    docUrl: "https://elevenlabs.io",
+    description: "Nền tảng lồng tiếng & hiệu ứng âm thanh AI số 1 thế giới (Eleven Multilingual v2).",
+  },
+  {
     id: "provider",
     name: "Gateway Bùi Hữu Thắng",
     short: "Bùi Hữu Thắng",
@@ -121,6 +131,16 @@ const PRESET_GATEWAYS: Array<Omit<GatewayConfig, "apiKey" | "hasKey" | "baseUrl"
     defaultUrl: "https://api.groq.com/openai/v1",
     docUrl: "https://console.groq.com",
     description: "Tốc độ phản hồi cực nhanh trên chip LPU dành cho prompt và kịch bản.",
+  },
+  {
+    id: "muse",
+    name: "Muse AI Gateway (MuseTalk / MuseV / MuseVoice)",
+    short: "Muse AI",
+    icon: "🎭",
+    badge: "MUSE",
+    defaultUrl: "https://api.musetalk.ai/v1",
+    docUrl: "https://github.com/TMElyralab/MuseTalk",
+    description: "Cổng chuyên MuseTalk (đồng bộ khẩu hình môi thời gian thực), MuseV và Voice Clone tạo giọng nói.",
   },
   {
     id: "bailian",
@@ -214,6 +234,11 @@ export function ApiGatewaysModal({ isOpen, onClose }: ApiGatewaysModalProps) {
           apiKey: data.groq?.apiKey || "",
           hasKey: data.groq?.hasKey || false,
         },
+        muse: {
+          baseUrl: data.muse?.baseUrl || "https://api.musetalk.ai/v1",
+          apiKey: data.muse?.apiKey || "",
+          hasKey: data.muse?.hasKey || false,
+        },
         bailian: {
           baseUrl: data.bailian?.baseUrl || "https://dashscope.aliyuncs.com/api/v1",
           apiKey: data.bailian?.apiKey || "",
@@ -223,6 +248,11 @@ export function ApiGatewaysModal({ isOpen, onClose }: ApiGatewaysModalProps) {
           baseUrl: data.autodl?.baseUrl || "https://uXXXX-8188.westc.gpuhub.com",
           apiKey: data.autodl?.apiKey || "autodl",
           hasKey: data.autodl?.hasKey || false,
+        },
+        elevenlabs: {
+          baseUrl: "https://api.elevenlabs.io/v1",
+          apiKey: data.elevenlabs?.apiKey || (data.elevenlabsApiKey ? (data.elevenlabsApiKey.startsWith("••••") ? data.elevenlabsApiKey : `••••${data.elevenlabsApiKey.slice(-4)}`) : (data.hasElevenLabsKey ? "••••••••" : "")),
+          hasKey: data.hasElevenLabsKey || Boolean(data.elevenlabsApiKey) || false,
         },
       };
 
@@ -326,12 +356,19 @@ export function ApiGatewaysModal({ isOpen, onClose }: ApiGatewaysModalProps) {
       } else if (currentConfig.id === "groq") {
         payload.groqBaseUrl = currentConfig.baseUrl;
         if (!currentConfig.apiKey.includes("••••")) payload.groqApiKey = currentConfig.apiKey;
+      } else if (currentConfig.id === "muse") {
+        payload.museBaseUrl = currentConfig.baseUrl;
+        if (!currentConfig.apiKey.includes("••••")) payload.museApiKey = currentConfig.apiKey;
       } else if (currentConfig.id === "bailian") {
         payload.bailianBaseUrl = currentConfig.baseUrl;
         if (!currentConfig.apiKey.includes("••••")) payload.bailianApiKey = currentConfig.apiKey;
       } else if (currentConfig.id === "autodl") {
         payload.autodlBaseUrl = currentConfig.baseUrl;
         if (!currentConfig.apiKey.includes("••••")) payload.autodlApiKey = currentConfig.apiKey;
+      } else if (currentConfig.id === "elevenlabs") {
+        if (!currentConfig.apiKey.includes("••••")) {
+          payload.elevenlabsApiKey = currentConfig.apiKey;
+        }
       } else if (currentCustom) {
         payload.customProviders = customList;
       }

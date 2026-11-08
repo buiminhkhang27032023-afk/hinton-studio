@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Drama Production"
+  short_description: "Làm phim AI với nhân vật, bối cảnh và shot nhất quán"
+  default_prompt: "Dùng $ai-drama-production để triển khai kịch bản hiện tại thành bộ tài nguyên, phân cảnh và prompt video nhất quán."

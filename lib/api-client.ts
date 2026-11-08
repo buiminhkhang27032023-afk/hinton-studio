@@ -82,7 +82,7 @@ export const api = {
     name?: string;
   }) => request<{ jobId: string; output?: Asset; error?: string }>("/api/run", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, requestId: crypto.randomUUID() }),
   }),
   assets: {
     list: (projectId?: string) =>
@@ -103,6 +103,7 @@ export const api = {
         hasKey: boolean;
         proxyAssets: boolean;
         language: string;
+        modelCallsPaused: boolean;
         iooai: { baseUrl: string; apiKey: string; hasKey: boolean };
         piapi: { baseUrl: string; apiKey: string; hasKey: boolean };
         runninghub: { baseUrl: string; apiKey: string; hasKey: boolean };
@@ -111,6 +112,7 @@ export const api = {
       request<{ ok: true }>("/api/settings", { method: "PUT", body: JSON.stringify(payload) }),
   },
   jobs: {
+    recover: (id: string) => request<{ status: string; jobId: string; output?: Asset; error?: string; providerStatus?: string }>(`/api/jobs/${encodeURIComponent(id)}/recover`, { method: "POST", body: "{}" }),
     list: (projectId?: string) =>
       request<JobRecord[]>(`/api/run${projectId ? `?projectId=${projectId}` : ""}`),
   },

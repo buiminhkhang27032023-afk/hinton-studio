@@ -17,6 +17,8 @@ import {
   RotateCcw,
   Film,
   Zap,
+  Minus,
+  ChevronUp,
 } from "lucide-react";
 import clsx from "clsx";
 import type { StudioNode } from "@/lib/execute";
@@ -133,6 +135,7 @@ export function CanvasCopilot({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -180,6 +183,7 @@ export function CanvasCopilot({
           if (n.type === "prompt" || n.type === "prompt_master") return `Prompt: "${n.data?.text || ""}"`;
           if (n.type === "generate") return `Generate: ${n.data?.modelKind || "image"} (${n.data?.modelId || "default"})`;
           if (n.type === "image") return `Media: ${n.data?.imageUrl ? "ảnh" : n.data?.videoUrl ? "video" : "trống"}`;
+          if (n.type === "voice" || n.type === "audio") return `Giọng nói: "${(n.data as any)?.text || (n.data as any)?.voiceDescription || (n.data as any)?.name || "audio"}"`;
           return n.type;
         })
         .slice(0, 10)
@@ -248,9 +252,14 @@ export function CanvasCopilot({
   return (
     <div
       className={clsx(
-        "pointer-events-auto absolute bottom-4 right-4 z-40 flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#121218]/95 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.85)] backdrop-blur-xl transition-all duration-200",
-        minimized ? "h-14 w-80" : "h-[560px] w-[420px] max-w-[calc(100vw-32px)]",
+        "nowheel nodrag pointer-events-auto absolute bottom-4 right-4 z-40 flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#121218]/95 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.85)] backdrop-blur-xl transition-all duration-200",
+        minimized
+          ? "h-14 w-80"
+          : isExpanded
+            ? "h-[86vh] w-[880px] max-w-[calc(100vw-32px)]"
+            : "h-[680px] w-[580px] max-h-[calc(100vh-80px)] max-w-[calc(100vw-32px)]",
       )}
+      onWheel={(e) => e.stopPropagation()}
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-3.5 py-2.5">
@@ -277,14 +286,32 @@ export function CanvasCopilot({
           >
             <RotateCcw size={13} />
           </button>
+
+          {/* Phóng to toàn màn hình (880px) / Thu về chuẩn (580px) */}
+          {!minimized && (
+            <button
+              type="button"
+              onClick={() => setIsExpanded((v) => !v)}
+              title={isExpanded ? "Thu về cỡ chuẩn (580px)" : "Phóng to toàn khung chat (880px)"}
+              className={clsx(
+                "rounded p-1 hover:bg-white/10 hover:text-white transition",
+                isExpanded && "text-amber-400 bg-amber-400/10"
+              )}
+            >
+              {isExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            </button>
+          )}
+
+          {/* Thu nhỏ xuống thanh tiêu đề */}
           <button
             type="button"
             onClick={() => setMinimized((v) => !v)}
-            title={minimized ? "Mở rộng" : "Thu nhỏ"}
+            title={minimized ? "Mở rộng khung chat" : "Thu nhỏ xuống thanh tiêu đề"}
             className="rounded p-1 hover:bg-white/10 hover:text-white"
           >
-            {minimized ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
+            {minimized ? <ChevronUp size={14} /> : <Minus size={14} />}
           </button>
+
           <button
             type="button"
             onClick={onClose}
@@ -300,7 +327,11 @@ export function CanvasCopilot({
       {!minimized && (
         <>
           {/* Scrollable messages area */}
-          <div ref={scrollRef} className="flex-1 space-y-3.5 overflow-y-auto p-3.5 text-[13px] leading-relaxed">
+          <div
+            ref={scrollRef}
+            className="nowheel nodrag flex-1 space-y-3.5 overflow-y-auto p-3.5 text-[13px] leading-relaxed"
+            onWheel={(e) => e.stopPropagation()}
+          >
             {messages.map((m) => (
               <div
                 key={m.id}
@@ -485,7 +516,7 @@ export function CanvasCopilot({
                   }
                 }}
                 placeholder="Nhập yêu cầu kịch bản, prompt, hoặc câu hỏi..."
-                className="max-h-24 min-h-[34px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] text-white outline-none placeholder:text-white/30"
+                className="nowheel nodrag max-h-24 min-h-[34px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] text-white outline-none placeholder:text-white/30"
               />
               <button
                 type="submit"

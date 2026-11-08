@@ -68,11 +68,25 @@ export const GROQ_PROVIDER: ProviderSettings = {
   authHeader: "bearer",
 };
 
+export const MUSE_PROVIDER: ProviderSettings = {
+  baseUrl: "https://api.musetalk.ai/v1",
+  apiKey: "",
+  proxyAssets: true,
+  authHeader: "bearer",
+};
+
 export const BAILIAN_PROVIDER: ProviderSettings = {
   baseUrl: "https://dashscope.aliyuncs.com/api/v1",
   apiKey: "",
   proxyAssets: true,
   authHeader: "bearer",
+};
+
+export const ELEVENLABS_PROVIDER: ProviderSettings = {
+  baseUrl: "https://api.elevenlabs.io/v1",
+  apiKey: "",
+  proxyAssets: true,
+  authHeader: "x-api-key",
 };
 
 export const AUTODL_PROVIDER: ProviderSettings = {
@@ -97,12 +111,21 @@ const PROVIDER_SETTING_KEY: Record<string, { key: string; fallback: ProviderSett
   bailian: { key: "provider_bailian", fallback: BAILIAN_PROVIDER },
   dashscope: { key: "provider_bailian", fallback: BAILIAN_PROVIDER },
   autodl: { key: "provider_autodl", fallback: AUTODL_PROVIDER },
+  muse: { key: "provider_muse", fallback: MUSE_PROVIDER },
+  elevenlabs: { key: "provider_elevenlabs", fallback: ELEVENLABS_PROVIDER },
 };
 
 export * from "./provider-meta";
 
 export function getProvider(id: string = "openai-compatible"): ProviderSettings {
   const normId = (id || "openai-compatible").toLowerCase();
+  if (normId === "elevenlabs") {
+    const prov = { ...ELEVENLABS_PROVIDER, ...getSetting<Partial<ProviderSettings>>("provider_elevenlabs", {}) };
+    if (!prov.apiKey) {
+      prov.apiKey = getSetting<string>("elevenlabs_api_key", "") || process.env.ELEVENLABS_API_KEY || "";
+    }
+    return prov;
+  }
   const entry = PROVIDER_SETTING_KEY[normId];
   if (entry) {
     return { ...entry.fallback, ...getSetting<Partial<ProviderSettings>>(entry.key, {}) };
@@ -177,6 +200,12 @@ export interface RunModelInput {
   vars: Record<string, unknown>;
   /** Which provider config to use (ModelRecord.provider). Defaults to the main gateway. */
   providerId?: string;
+  /** Called as soon as the provider returns a task id, so a slow job can be recovered. */
+  onJobId?: (jobId: string) => void;
+  /** Persist the submission boundary before any billable request. */
+  onSubmit?: () => void;
+  /** Set only by the server after consuming a scoped single-use approval. */
+  approvedPausedRun?: boolean;
 }
 
 export interface RunModelResult {
@@ -195,30 +224,22 @@ function authHeaders(provider: ProviderSettings): Record<string, string> {
     : { Authorization: `Bearer ${provider.apiKey}` };
 }
 
-/**
- * The buihuuthang gateway is flaky in bursts — the exact same request can get a
- * 405, or a job that reports status "failed" with a generic message, and then
- * succeed outright a few minutes later. These two shapes are the ones observed
- * in practice; treat them as transient and worth one whole-job retry.
- */
-const TRANSIENT_JOB_ERROR = /\b405\b|yêu cầu tạo nội dung thất bại|tác vụ thất bại/i;
-
 export async function runModel(input: RunModelInput): Promise<RunModelResult> {
-  try {
-    return await attemptRun(input);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (input.providerId === "iooai" || !TRANSIENT_JOB_ERROR.test(message)) throw error;
-    await sleep(5000);
-    return attemptRun(input);
+  if (getSetting<boolean>("model_calls_paused", false) === true && input.approvedPausedRun !== true) {
+    throw new Error("Đã khóa gọi model theo yêu cầu của bạn. Chưa gửi yêu cầu mới.");
   }
+  // Re-submitting a generation can create another billable task even when
+  // the previous response timed out. Never retry whole generations implicitly.
+  return attemptRun(input);
 }
 
 async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
   const provider = getProvider(input.providerId);
   if (!provider.apiKey) {
     const where =
-      input.providerId === "duomiapi"
+      input.providerId === "muse"
+        ? "Cài đặt → Cổng Muse AI"
+        : input.providerId === "duomiapi"
         ? "Cài đặt → Cổng DuomiAPI"
         : input.providerId === "iooai"
         ? "Cài đặt → Cổng IOOAI"
@@ -265,27 +286,89 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
     vars.ratio = vars.aspect;
     vars.resolution = vars.resolution === "1080p" ? "1080p" : "720p";
 
+    // Handle video reference for video-to-video capable models (Omni Video Editor, Seedance 2.0 / 2.5)
+    const midCheck = String(vars.model || input.model || "").toLowerCase();
+    if (midCheck.includes("seedance2.5 lj") || midCheck.includes("seedance2.5lj")) {
+      delete vars.videos;
+      delete vars.video;
+      delete vars.videoUrl;
+    } else if (Array.isArray(vars.videos) && vars.videos.length > 0) {
+      if (midCheck.includes("可编辑") || midCheck.includes("seedance")) {
+        vars.videos = vars.videos.filter((u) => typeof u === "string" && /^https:\/\//i.test(u));
+        if (!vars.videos.length) delete vars.videos;
+      } else {
+        delete vars.videos;
+      }
+    } else {
+      const rawVid = (vars.video || vars.videoUrl) as string | undefined;
+      if (typeof rawVid === "string" && rawVid.trim()) {
+        if (midCheck.includes("可编辑") || midCheck.includes("seedance")) {
+          vars.videos = [rawVid.trim()];
+        } else {
+          delete vars.videos;
+          delete vars.video;
+          delete vars.videoUrl;
+        }
+      }
+    }
+
+    // Handle audio fields for IOOAI:
+    // ByteDance Seedance 2.0 / 2.5 officially supports `audios: [https_urls]` for multi-character audio guidance/lipsync!
+    // Other models (Omni, MiniMax) do not accept audio fields.
+    if (midCheck.includes("seedance") && Array.isArray(vars.audios) && vars.audios.length > 0) {
+      // Keep vars.audios as an array of public HTTPS audio URLs for Seedance
+      vars.audios = vars.audios.filter((u) => typeof u === "string" && /^https:\/\//i.test(u));
+      if (!vars.audios.length) delete vars.audios;
+    } else {
+      delete vars.audios;
+    }
+    delete vars.audio;
+    delete vars.audioUrl;
+    delete vars.audio_url;
+    delete vars.sound;
+
     // Auto-normalize duration & seconds to match IOOAI endpoint requirements
     const mid = String(vars.model || input.model || "").toLowerCase();
+    if (mid.includes("adaptive") || (mid.includes("seedance") && (mid.includes("fast") || mid.includes("mini") || mid.includes("满血")) && !mid.includes("官渠") && !mid.includes("全参"))) {
+      vars.ratio = "adaptive";
+    }
+    if (input.kind === "video" && mid.includes("omni") && !mid.includes("edit") && !mid.includes("可编辑")) {
+      let images = Array.isArray(vars.images) ? vars.images : [];
+      if (images.length > 7) {
+        images = images.slice(0, 7);
+        vars.images = images;
+      }
+      if (!images.length || images.some((url) => typeof url !== "string" || !/^https:\/\//i.test(url))) {
+        throw new Error("IOOAI Omni cần 1–7 ảnh URL HTTPS công khai. Không gửi ảnh local hoặc âm thầm chuyển sang tạo bằng chữ.");
+      }
+    }
+    if (vars.model === "seedance2.0 线路二" || mid.includes("线路二") || mid.includes("特价")) {
+      delete vars.resolution;
+    }
+    if (mid.includes("seedance2.5 lj")) {
+      vars.resolution = "1080p";
+    }
     let sec = Number(vars.seconds ?? vars.duration ?? 15);
-    if (mid.includes("快速版") || (mid.includes("seedance2.5") && !mid.includes("lw"))) {
-      sec = sec > 15 ? 30 : 15;
-    } else if (mid.includes("线路三") || mid.includes("线路二")) {
+    if (mid.includes("线路三") || mid.includes("seedance2.5线路二")) {
       sec = 30;
-    } else if (mid.includes("特价")) {
+    } else if (mid.includes("线路二") || mid.includes("特价") || mid.includes("快速版")) {
       sec = 15;
     } else if (mid.includes("omni")) {
       sec = 10;
     } else if (mid.includes("lw")) {
       const allowed = [5, 8, 10, 12, 13, 15, 30];
       sec = allowed.reduce((prev, curr) => Math.abs(curr - sec) < Math.abs(prev - sec) ? curr : prev, 15);
+    } else if (mid.includes("seedance2.5") || mid.includes("seedance 2.5")) {
+      sec = Math.min(30, Math.max(4, Math.round(sec)));
     } else if (mid.includes("seedance 2.0") || mid.includes("seedance2.0")) {
       sec = Math.min(15, Math.max(4, Math.round(sec)));
     }
     vars.seconds = String(sec);
     vars.duration = sec;
   }
-  if (input.providerId === "duomiapi" && input.config.endpoint?.includes("contents/generations/tasks")) {
+  if (input.providerId === "muse"
+        ? "Cài đặt → Cổng Muse AI"
+        : input.providerId === "duomiapi" && input.config.endpoint?.includes("contents/generations/tasks")) {
     const prompt = String(vars.prompt || "").trim();
     const image = typeof vars.image === "string" ? vars.image.trim() : "";
     const content: Array<Record<string, unknown>> = [];
@@ -401,7 +484,7 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
       // later attempts inherit however much of the clock earlier attempts already burned.
       let res: Response;
       try {
-        res = await fetch(url, { ...baseInit, signal: AbortSignal.timeout(timeoutMs) });
+        res = await fetch(url, { ...baseInit, signal: AbortSignal.timeout(verb ? Math.min(timeoutMs, 30_000) : timeoutMs) });
       } catch (err) {
         // A hung/very slow response (our own client timeout firing, or a network drop)
         // throws instead of resolving — this gateway is slow often enough that it's worth
@@ -442,7 +525,9 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
     throw new Error(lastError || "Không gọi được API.");
   };
 
-  const json = await send(input.config.endpoint, input.providerId === "iooai" ? 1 : 6);
+  // Only polling may be retried; creation requests have no idempotency contract.
+  input.onSubmit?.();
+  const json = await send(input.config.endpoint, 1);
 
   if (input.providerId?.startsWith("runninghub") || base.includes("runninghub")) {
     const errCode = String(pick(json, "errorCode") ?? "");
@@ -468,14 +553,21 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
   }
 
   const resultPath = input.config.resultPath ?? "data.0.url";
+  // Persist acceptance before parsing results or polling. Do not swallow a DB
+  // failure: continuing without a durable ID makes safe recovery impossible.
+  const jobId = input.config.jobPath
+    ? (pick(json, input.config.jobPath) ?? pick(json, "taskId") ?? pick(json, "data.taskId") ?? pick(json, "task_id") ?? pick(json, "data.task_id") ?? pick(json, "id"))
+    : (pick(json, "taskId") ?? pick(json, "id") ?? pick(json, "task_id") ?? pick(json, "data.taskId") ?? pick(json, "data.task_id"));
+  if (jobId != null) input.onJobId?.(String(jobId));
   const direct = pick(json, resultPath);
 
-  if (typeof direct === "string" && direct.length > 0) {
+  if (typeof direct === "string" && direct.length > 0 &&
+      !(input.providerId === "iooai" && (pick(json, "download_ready") === false || pick(json, "data.download_ready") === false))) {
     // Some /chat/completions models (e.g. req/gemini-3.0-pro-image) answer with the image
     // as a markdown link inside the text content, not a bare URL: "![...](https://...)".
     const markdownImage = /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/.exec(direct);
     const url = markdownImage ? markdownImage[1] : direct;
-    return { source: url, mime: guessMime(url, input.kind), raw: json };
+    return { source: url, mime: guessMime(url, input.kind), providerJob: jobId == null ? undefined : String(jobId), raw: json };
   }
 
   // Images API often answers with base64 instead of a URL.
@@ -489,18 +581,20 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
   }
 
   // Async job flow: poll until the status field says done / failed.
-  const jobId = input.config.jobPath
-    ? (pick(json, input.config.jobPath) ?? pick(json, "taskId") ?? pick(json, "data.taskId") ?? pick(json, "task_id") ?? pick(json, "data.task_id") ?? pick(json, "id"))
-    : (pick(json, "taskId") ?? pick(json, "id") ?? pick(json, "task_id") ?? pick(json, "data.taskId") ?? pick(json, "data.task_id"));
   if (input.config.pollEndpoint && jobId != null) {
     const statusPath = input.config.statusPath ?? "status";
     const done = input.config.doneValues ?? ["succeeded", "completed", "success", "done"];
     const failed = input.config.failedValues ?? ["failed", "error", "cancelled"];
-    const deadline = Date.now() + timeoutMs;
+    // Video providers (IOOAI Seedance/Omni) regularly take 15–30 min when busy;
+    // the old 15-min cap gave up on jobs that were still rendering.
+    const pollTimeoutMs = input.kind === "video" ? Math.max(timeoutMs, 45 * 60_000) : timeoutMs;
+    const deadline = Date.now() + pollTimeoutMs;
     let lastStatus = "";
 
+    if (input.config.initialPollDelaySeconds) await sleep(input.config.initialPollDelaySeconds * 1000);
+
     while (Date.now() < deadline) {
-      await sleep(3000);
+      await sleep(Math.max(3000, (input.config.pollIntervalSeconds ?? 3) * 1000));
       const pollMethod = input.config.pollMethod ?? (input.providerId === "runninghub" ? "POST" : "GET");
       const pollBody = pollMethod === "POST" ? { taskId: String(jobId) } : undefined;
       const pollJson = await send(input.config.pollEndpoint.replace("{{job}}", String(jobId)), 6, pollMethod, pollBody);
@@ -519,22 +613,24 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
         }
       }
 
-      if (failed.includes(status)) {
+      const hasUpstreamErr = pick(pollJson, "error");
+      if (failed.includes(status) || (hasUpstreamErr && !done.includes(status) && status !== "queued" && pick(pollJson, "error.code") === "upstream_error")) {
         const detail =
           (pick(pollJson, "errorMessage") as string) ??
           (pick(pollJson, "failedReason.message") as string) ??
           (pick(pollJson, "error.message") as string) ??
           (pick(pollJson, "error") as string) ??
           status;
-        throw new Error(`Tác vụ thất bại: ${detail}`);
+        throw new Error(`${failed.includes(status) ? "Tác vụ thất bại" : "Tác vụ chưa có kết quả"}: ${detail}`);
       }
 
       if (done.includes(status)) {
-        if (input.providerId === "iooai" && pick(pollJson, "download_ready") === false) continue;
+        if (input.providerId === "iooai" && (pick(pollJson, "download_ready") === false || pick(pollJson, "data.download_ready") === false)) continue;
         let finalValue = pick(pollJson, resultPath);
         if (!finalValue || typeof finalValue !== "string") {
           finalValue = pick(pollJson, "results.0.url")
             ?? pick(pollJson, "data.outputUrl")
+            ?? pick(pollJson, "data.output_url")
             ?? pick(pollJson, "output_url")
             ?? pick(pollJson, "video_url")
             ?? pick(pollJson, "videos.0.url")
@@ -571,7 +667,7 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
       }
     }
     throw new Error(
-      `Quá thời gian chờ (trạng thái cuối: ${lastStatus || "không rõ"}). Tác vụ có thể vẫn đang chạy.`,
+      `Quá thời gian chờ (trạng thái cuối: ${lastStatus || "không rõ"}). Tác vụ có thể vẫn đang chạy — mã tác vụ: ${String(jobId)}.`,
     );
   }
 

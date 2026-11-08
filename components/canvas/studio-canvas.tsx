@@ -68,6 +68,7 @@ import {
   Spline,
   Zap,
   MousePointer2,
+  Move,
   Hand,
   X,
 } from "lucide-react";
@@ -148,7 +149,7 @@ const NODE_LIBRARY = [
   { type: "prompt", icon: AlignLeft, label: "Văn bản", hint: "Kịch bản, nội dung quảng cáo, văn bản…", section: "core" },
   { type: "generate", icon: ImageIcon, label: "Hình ảnh", hint: "Tạo ảnh từ câu lệnh, phác thảo…", section: "core", data: { modelKind: "image" } },
   { type: "generate", icon: Video, label: "Video", hint: "Tạo video AI, hoạt cảnh, catwalk…", section: "core", data: { modelKind: "video" } },
-  { type: "audio", icon: AudioLines, label: "Âm thanh", hint: "Lồng tiếng, nhạc nền, âm thanh…", section: "core" },
+  { type: "audio", icon: AudioLines, label: "Lồng tiếng OmniVoice", hint: "Tổng hợp giọng đọc Hinton AI, Voice-Lock v2…", section: "core" },
   { type: "3d", icon: Box, label: "3D", hint: "Mô hình 3D, camera không gian…", section: "core" },
 
   // 2. Tiện ích (Utilities)
@@ -190,8 +191,8 @@ function defaultData(type: string, extra?: Record<string, unknown>): StudioNodeD
   if (type === "fashion_tryon") return { ...base, prompt: "", modelId: "seed:image:gemini-compose" };
   if (type === "fashion_compose") return { ...base, headline: "HÃY NHỚ", subheadline: "Bí quyết phối đồ" };
   if (type === "group") return { ...base, label: "New Group", width: 360, height: 260 };
-  if (type === "audio") return { ...base, text: "Giọng đọc truyền cảm, âm thanh sống động…", name: "Âm thanh" };
-  if (type === "3d") return { ...base, text: "3D camera orbit 360 degree, depth scene…", name: "Studio 3D" };
+  if (type === "audio" || type === "voice") return { ...base, text: "", name: "Lồng tiếng OmniVoice", voice: "omnivoice", speed: 1.2 };
+  if (type === "3d" || type === "model3d") return { ...base, preset: "mannequin", name: "Mô hình 3D Tham Chiếu" };
   return base;
 }
 
@@ -362,13 +363,9 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     [onEdgesChange, pushSnapshot],
   );
 
+  // Auto-inspect disabled: docked TapNow editor directly on node handles all controls
   useEffect(() => {
-    if (selectedId) {
-      const node = nodesRef.current.find((n) => n.id === selectedId);
-      if (node && node.type !== "group") {
-        setInspectedId(selectedId);
-      }
-    }
+    // Keep inspectedId null so right sidebar drawer does not cover the canvas
   }, [selectedId]);
 
   const onNodeDragStart = useCallback(() => {
@@ -393,11 +390,12 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
           if (parentGroup) {
             const gW = (parentGroup.data as any)?.width ?? 360;
             const gH = (parentGroup.data as any)?.height ?? 260;
+            // Free the node if dragged out of group boundaries (no longer trapped)
             const isOutside =
-              node.position.x < -30 ||
-              node.position.y < -30 ||
-              node.position.x > gW + 30 ||
-              node.position.y > gH + 30;
+              node.position.x < 0 ||
+              node.position.y < 0 ||
+              node.position.x > gW - 60 ||
+              node.position.y > gH - 60;
 
             if (isOutside) {
               const absX = parentGroup.position.x + node.position.x;
@@ -405,8 +403,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
               toast(`Đã đưa khối ra khỏi nhóm "${(parentGroup.data as any)?.label || "Group"}"`, "default");
               return current.map((n) => {
                 if (n.id === node.id) {
-                  const { parentId, extent, ...rest } = n;
-                  return { ...rest, position: { x: absX, y: absY } };
+                  return { ...n, parentId: undefined, extent: undefined, position: { x: absX, y: absY } };
                 }
                 return n;
               });
@@ -415,7 +412,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
           return current;
         }
 
-        // 2. If node is currently free (no parent): check if dropped inside any group
+        // 2. If node is currently free (no parent): check if dropped solidly inside any group
         const nodeX = node.position.x;
         const nodeY = node.position.y;
         for (const group of groups) {
@@ -424,7 +421,8 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
           const gW = (group.data as any)?.width ?? 360;
           const gH = (group.data as any)?.height ?? 260;
 
-          if (nodeX >= gX - 20 && nodeX <= gX + gW - 30 && nodeY >= gY - 20 && nodeY <= gY + gH - 30) {
+          // Only capture if dropped solidly inside the group frame (not on edge)
+          if (nodeX >= gX + 15 && nodeX <= gX + gW - 80 && nodeY >= gY + 15 && nodeY <= gY + gH - 60) {
             const localX = Math.max(16, nodeX - gX);
             const localY = Math.max(36, nodeY - gY);
             const neededW = Math.max(gW, localX + 260 + 24);
@@ -440,7 +438,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                 return {
                   ...n,
                   parentId: group.id,
-                  extent: "parent" as const,
+                  extent: undefined,
                   position: { x: localX, y: localY },
                 };
               }
@@ -448,7 +446,6 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             });
           }
         }
-
         return current;
       });
     },
@@ -486,7 +483,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         position: node.position,
         data: node.data,
         parentId: node.parentId,
-        extent: node.extent,
+        extent: undefined,
       })),
       edges: edges.map((edge) => ({
         id: edge.id,
@@ -622,7 +619,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         const promptId = `prompt-copilot-${Date.now()}-${idx}`;
         const genId = `gen-copilot-${Date.now()}-${idx}`;
         const isVideo = sc.modelKind !== "image";
-        const yOffset = idx * 240;
+        const yOffset = idx * 620;
 
         // Prompt Node
         newNodes.push({
@@ -673,14 +670,31 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
     (newText: string) => {
       if (!selectedId) return;
       pushSnapshot();
+
+      // Normalize any dangling colon or named tags in copilot text
+      let cleanText = newText.trim();
+      if (/^\s*:\s*/.test(cleanText)) {
+        cleanText = `[@Image 1]: ${cleanText.replace(/^\s*:\s*/, "")}`;
+      }
+      let imgIdx = 1;
+      const namedMap = new Map<string, number>();
+      cleanText = cleanText.replace(/@(?:Ảnh|ảnh|image|Image)[_-]([a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF]+)/gi, (match, name) => {
+        const key = name.toLowerCase();
+        if (!namedMap.has(key)) {
+          imgIdx++;
+          namedMap.set(key, imgIdx);
+        }
+        return `[@Image ${namedMap.get(key) || 2}]`;
+      });
+
       setNodes((curr) =>
         curr.map((n) => {
           if (n.id !== selectedId) return n;
           if (n.type === "prompt" || n.type === "prompt_master") {
-            return { ...n, data: { ...n.data, text: newText } };
+            return { ...n, data: { ...n.data, text: cleanText } };
           }
           if (n.type === "generate" || n.type === "fashion_tryon") {
-            return { ...n, data: { ...n.data, prompt: newText } };
+            return { ...n, data: { ...n.data, prompt: cleanText } };
           }
           return n;
         }),
@@ -762,10 +776,49 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   const onConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
       setLinkDrag(null);
-      if (reconnecting.current || state.toNode || !state.fromNode) return;
+      if (reconnecting.current || !state.fromNode) return;
       const point = "changedTouches" in event ? event.changedTouches[0] : event;
       if (!point) return;
-      // The mouseup that ends a drag can also emit a pane click and dismiss the menu.
+
+      // 1. Kéo vào bất kỳ vị trí nào bên trong khối (card) là tự động nhận, không bắt buộc trúng điểm chấm tròn
+      const elementUnderCursor = document.elementFromPoint(point.clientX, point.clientY);
+      const targetNodeEl = elementUnderCursor?.closest<HTMLElement>(".react-flow__node");
+
+      if (targetNodeEl) {
+        const targetNodeId = targetNodeEl.getAttribute("data-id");
+        if (targetNodeId && targetNodeId !== state.fromNode.id) {
+          const isFromTarget = state.fromHandle?.type === "target";
+          const sourceId = isFromTarget ? targetNodeId : state.fromNode.id;
+          const targetId = isFromTarget ? state.fromNode.id : targetNodeId;
+          const sourceHandle = isFromTarget ? HANDLE_OUT : (state.fromHandle?.id || HANDLE_OUT);
+          const targetHandle = isFromTarget ? (state.fromHandle?.id || HANDLE_IN) : HANDLE_IN;
+
+          const connection: Connection = {
+            source: sourceId,
+            target: targetId,
+            sourceHandle,
+            targetHandle,
+          };
+
+          if (isValidConnection(connection)) {
+            const alreadyExists = edges.some(
+              (e) => e.source === sourceId && e.target === targetId
+            );
+            if (!alreadyExists) {
+              onConnect(connection);
+              toast("Đã kết nối khối thành công!", "success");
+            }
+            return;
+          } else {
+            toast("Hai khối này không tương thích kiểu dữ liệu đầu vào/ra.", "default");
+            return;
+          }
+        }
+      }
+
+      if (state.toNode) return;
+
+      // 2. Nhả chuột ra ngoài khoảng trống canvas mới hiện popup gợi ý thêm khối
       ignorePaneClick.current = true;
       window.setTimeout(() => {
         ignorePaneClick.current = false;
@@ -776,11 +829,11 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         handleType: state.fromHandle?.type === "target" ? "target" : "source",
       });
     },
-    [openAddAt],
+    [edges, isValidConnection, onConnect, openAddAt, toast],
   );
 
   const onSelectionChange = useCallback(({ nodes: selected }: OnSelectionChangeParams) => {
-    setSelectedId(selected[0]?.id ?? null);
+    setSelectedId(selected.length === 1 ? selected[0].id : null);
     setSelectedIds(selected.map((node) => node.id));
   }, []);
 
@@ -848,7 +901,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         return {
           ...n,
           parentId: groupId,
-          extent: "parent" as const,
+          extent: undefined,
           position: place,
           selected: false,
         };
@@ -891,7 +944,29 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       patchNode(nodeId, { status: "running", error: null });
       try {
         const result = await runStudioNode(node, list, links, project.id);
-        patchNode(nodeId, { status: "done", result: result.asset });
+        const prevResult = node.data?.result;
+        const existingHistory = Array.isArray(node.data?.history) ? [...node.data.history] : [];
+        if (prevResult?.url && prevResult.url !== result.asset.url) {
+          if (!existingHistory.some((h) => h.url === prevResult.url)) {
+            existingHistory.unshift({
+              id: prevResult.id,
+              url: prevResult.url,
+              kind: prevResult.kind as any,
+              name: prevResult.name || (prevResult.kind === "video" ? "Video trước" : "Ảnh trước"),
+              model: (node.data?.model as string) || (node.data?.modelId as string),
+              prompt: node.data?.prompt,
+              createdAt: (prevResult as any).createdAt || Date.now(),
+            });
+          }
+        }
+        patchNode(nodeId, {
+          status: "done",
+          result: result.asset,
+          videoUrl: result.asset.kind === "video" ? result.asset.url : node.data?.videoUrl,
+          imageUrl: result.asset.kind === "image" ? result.asset.url : node.data?.imageUrl,
+          history: existingHistory,
+          activeHistoryIndex: 0,
+        });
         return result.asset;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Lỗi";
@@ -1174,7 +1249,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       {
         id: 'shot_2_prompt',
         type: 'prompt',
-        position: { x: 300, y: 560 },
+        position: { x: 300, y: 900 },
         data: {
           text: 'Phân cảnh 2 (Cao trào): Cận cảnh trung tâm biểu cảm đối thoại kịch tính.',
         },
@@ -1182,7 +1257,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       {
         id: 'shot_2_video',
         type: 'generate',
-        position: { x: 620, y: 560 },
+        position: { x: 620, y: 900 },
         data: {
           modelKind: 'video',
           aspect: '16:9',
@@ -1195,7 +1270,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       {
         id: 'shot_3_prompt',
         type: 'prompt',
-        position: { x: 300, y: 840 },
+        position: { x: 300, y: 1520 },
         data: {
           text: 'Phân cảnh 3 (Hạ màn): Góc máy xa dần, chuyển động chậm lột tả sự lắng đọng kết phim.',
         },
@@ -1203,7 +1278,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       {
         id: 'shot_3_video',
         type: 'generate',
-        position: { x: 620, y: 840 },
+        position: { x: 620, y: 1520 },
         data: {
           modelKind: 'video',
           aspect: '16:9',
@@ -1291,7 +1366,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
       shots.forEach((shot, idx) => {
         const promptNodeId = `shot_${shot.shot_index}_prompt`;
         const genNodeId = `shot_${shot.shot_index}_video`;
-        const yPos = 180 + idx * 240;
+        const yPos = 180 + idx * 640;
 
         // Prompt Node for this shot
         templateNodes.push({
@@ -1575,12 +1650,12 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
   );
 
   const reuseNode = useCallback(
-    (nodeId: string) => {
+    (nodeId: string, customUrl?: string, customKind?: "image" | "video", customName?: string) => {
       const target = nodes.find((n) => n.id === nodeId);
       if (!target) return;
       const data = target.data as StudioNodeData;
-      const url = data.result?.url || data.imageUrl || data.videoUrl;
-      const kind = data.result?.kind || (data.videoUrl ? "video" : "image");
+      const url = customUrl || data.result?.url || data.imageUrl || data.videoUrl;
+      const kind = customKind || data.result?.kind || (data.videoUrl ? "video" : "image");
       if (!url) {
         toast("Khối này chưa có hình ảnh hoặc video để dùng lại", "default");
         return;
@@ -1590,7 +1665,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
         x: target.position.x + 280,
         y: target.position.y,
       };
-      const name = `Dùng lại: ${target.data?.name || (isVid ? "Video" : "Ảnh")}`;
+      const name = customName || (customUrl ? `Khung hình cắt: ${target.data?.name || "Video"}` : `Dùng lại: ${target.data?.name || (isVid ? "Video" : "Ảnh")}`);
       addNode("image", spot, {
         imageUrl: isVid ? undefined : url,
         videoUrl: isVid ? url : undefined,
@@ -1713,6 +1788,63 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
 
   const selectedNode = inspectedNode;
 
+  const handleAutoLayout = useCallback(() => {
+    pushSnapshot();
+    setNodes((curr) => {
+      if (curr.length <= 1) return curr;
+
+      const nextNodes = curr.map((n) => ({ ...n, position: { ...n.position } }));
+
+      // Find paired prompt -> generate nodes to keep them horizontally aligned
+      const connectedPromptGen = new Map<string, string>();
+      edges.forEach((e) => {
+        const srcNode = nextNodes.find((n) => n.id === e.source);
+        const tgtNode = nextNodes.find((n) => n.id === e.target);
+        if (srcNode?.type === "prompt" && tgtNode?.type === "generate") {
+          connectedPromptGen.set(srcNode.id, tgtNode.id);
+        }
+      });
+
+      // Sort by y position
+      const sorted = [...nextNodes].sort((a, b) => a.position.y - b.position.y);
+
+      for (let i = 0; i < sorted.length; i++) {
+        for (let j = i + 1; j < sorted.length; j++) {
+          const a = sorted[i];
+          const b = sorted[j];
+
+          const xDiff = Math.abs(a.position.x - b.position.x);
+          if (xDiff < 240) {
+            const requiredMinY = a.position.y + 600;
+            if (b.position.y < requiredMinY) {
+              const diff = requiredMinY - b.position.y;
+              b.position.y = requiredMinY;
+
+              if (connectedPromptGen.has(b.id)) {
+                const pairedGen = nextNodes.find((n) => n.id === connectedPromptGen.get(b.id));
+                if (pairedGen) pairedGen.position.y = b.position.y;
+              } else {
+                for (const [pId, gId] of connectedPromptGen.entries()) {
+                  if (gId === b.id) {
+                    const pairedPrompt = nextNodes.find((n) => n.id === pId);
+                    if (pairedPrompt) pairedPrompt.position.y = b.position.y;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return nextNodes;
+    });
+
+    setTimeout(() => {
+      fitView({ padding: 0.25, duration: 400 });
+      toast("Đã tự động giãn cách & căn chỉnh các khối không bị đè nhau!", "success");
+    }, 80);
+  }, [pushSnapshot, setNodes, edges, fitView, toast]);
+
   const hasKey = useStudio((s) => s.hasKey);
 
   return (
@@ -1765,8 +1897,8 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             edgeTypes={EDGE_TYPES}
             connectionLineType={edgeCurve}
             connectionLineComponent={StudioConnectionLine}
-            connectionRadius={48}
-            reconnectRadius={24}
+            connectionRadius={60}
+            reconnectRadius={40}
             edgesReconnectable
             fitView
             fitViewOptions={FIT_VIEW_OPTIONS}
@@ -1776,9 +1908,15 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
             defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
             colorMode="dark"
             onlyRenderVisibleElements
-            elevateNodesOnSelect={false}
+            elevateNodesOnSelect={true}
             zoomOnDoubleClick={false}
-            onNodeDoubleClick={(_event, node) => runNode(node.id).catch(() => {})}
+            onNodeDoubleClick={(_event, node) => {
+              const url = (node.data?.videoUrl as string) || (node.data?.result as any)?.url || (node.data?.imageUrl as string);
+              const kind = (node.data?.videoUrl || (node.data?.result as any)?.kind === "video") ? "video" : "image";
+              if (url) {
+                openLightbox({ url, kind, title: String(node.data?.name || "Chi tiết") });
+              }
+            }}
             onNodeContextMenu={(event, node) => {
               event.preventDefault();
               setAddMenu(null);
@@ -1980,6 +2118,9 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
                   prev === ConnectionLineType.Bezier ? ConnectionLineType.SmoothStep : ConnectionLineType.Bezier,
                 );
               }}
+              onAutoLayout={handleAutoLayout}
+              onUndo={undo}
+              onRedo={redo}
             />
 
             <MiniMap
@@ -1992,64 +2133,23 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
               maskColor="rgba(8,8,10,.62)"
             />
 
-            {/* Sleek Floating Selection Pill Dock (Only shown when multiple nodes are selected) */}
-            {selectedIds.length >= 2 && (
-              <Panel position="bottom-center" className="!mb-6 z-40">
-                <div className="flex items-center gap-1.5 rounded-full border border-white/15 bg-[#121217]/95 px-3 py-1.5 shadow-2xl backdrop-blur-md text-[12px] text-white">
-                  <span className="text-neutral-400 font-medium px-1">Đã chọn {selectedIds.length} khối</span>
-                  <span className="h-3.5 w-px bg-white/15 mx-0.5" />
-                  <button
-                    type="button"
-                    onClick={groupSelected}
-                    className="flex items-center gap-1 rounded-full bg-white/10 hover:bg-white/20 px-2.5 py-1 text-white font-medium transition"
-                    title="Gom thành nhóm (Ctrl+G)"
-                  >
-                    <Layers size={13} className="text-amber-300" />
-                    Gom nhóm
-                  </button>
-                  <button
-                    type="button"
-                    onClick={runSelected}
-                    disabled={runningAll}
-                    className="flex items-center gap-1 rounded-full hover:bg-white/10 px-2 py-1 text-neutral-200 hover:text-white transition disabled:opacity-40"
-                    title="Chạy các khối đã chọn"
-                  >
-                    <Play size={12} fill="currentColor" />
-                    Chạy
-                  </button>
-                  <button
-                    type="button"
-                    onClick={duplicateSelected}
-                    className="flex items-center gap-1 rounded-full hover:bg-white/10 px-2 py-1 text-neutral-200 hover:text-white transition"
-                    title="Nhân bản (Ctrl+D)"
-                  >
-                    <Copy size={12} />
-                    Nhân bản
-                  </button>
-                  <button
-                    type="button"
-                    onClick={deleteSelected}
-                    className="flex items-center gap-1 rounded-full hover:bg-rose-500/20 px-2 py-1 text-rose-300 transition"
-                    title="Xoá (Del)"
-                  >
-                    <Trash2 size={12} />
-                    Xoá
-                  </button>
-                  <span className="h-3.5 w-px bg-white/15 mx-0.5" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedIds([]);
-                      setSelectedId(null);
-                    }}
-                    className="rounded-full p-1 text-neutral-400 hover:bg-white/10 hover:text-white transition"
-                    title="Bỏ chọn (Esc)"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
+            {/* Floating AI Copilot Launcher Button */}
+            {!copilotOpen && (
+              <Panel position="bottom-right" className="!bottom-28 !right-3 z-30">
+                <button
+                  type="button"
+                  onClick={() => setCopilotOpen(true)}
+                  className="flex items-center gap-2 rounded-full border border-violet-500/50 bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 px-3.5 py-2 text-[12.5px] font-semibold text-white shadow-[0_8px_24px_rgba(124,58,237,0.4)] backdrop-blur transition hover:scale-105 hover:shadow-[0_12px_28px_rgba(124,58,237,0.6)] active:scale-95"
+                  title="Mở Trợ lý AI Copilot - Chat kịch bản & đạo diễn"
+                >
+                  <Bot size={15} className="text-amber-300 animate-pulse" />
+                  <span>Trợ lý AI Studio</span>
+                  <span className="flex h-2 w-2 rounded-full bg-emerald-400" />
+                </button>
               </Panel>
             )}
+
+            {/* Multi-selection floating dock removed per user request */}
 {/* Floating toolbar is now attached directly to GroupNode via NodeToolbar */}
           </ReactFlow>
           </NodeMenuContext.Provider>
@@ -2321,18 +2421,7 @@ function CanvasInner({ project }: { project: ProjectSummary }) {
           />
         </div>
 
-      <Inspector
-        node={inspectedNode}
-        nodes={nodes}
-        edges={edges}
-        onPatch={patchNode}
-        onRun={() => (inspectedNode ? runNode(inspectedNode.id) : runSelected())}
-        onReuse={handleReuseMedia}
-        onClose={() => {
-          setInspectedId(null);
-          setSelectedId(null);
-        }}
-      />
+{/* Right sidebar inspector removed per user request */}
 
       <MediaLightbox onReuse={handleReuseMedia} />
     </div>
@@ -2387,6 +2476,7 @@ function BottomControlBar({
   onToggleCurve,
   onUndo,
   onRedo,
+  onAutoLayout,
 }: {
   mouseMode: "select" | "pan";
   onToggleMode: (mode: "select" | "pan") => void;
@@ -2394,6 +2484,7 @@ function BottomControlBar({
   onToggleCurve: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  onAutoLayout?: () => void;
 }) {
   const { zoomIn, zoomOut, fitView, zoomTo } = useReactFlow();
   const { zoom } = useViewport();
@@ -2451,9 +2542,9 @@ function BottomControlBar({
         {/* 3. Snap / Auto Layout (⚡) */}
         <button
           type="button"
-          onClick={() => fitView({ padding: 0.25, duration: 300 })}
-          title="Tự động căn chỉnh màn hình"
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition"
+          onClick={onAutoLayout || (() => fitView({ padding: 0.25, duration: 300 }))}
+          title="Tự động giãn cách & chống đè khối (Auto Layout)"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:text-amber-400 hover:bg-white/10 transition"
         >
           <Zap size={13} />
         </button>

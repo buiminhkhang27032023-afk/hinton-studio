@@ -1,0 +1,28 @@
+====================================================================
+          HƯỚNG DẪN CHUYỂN DỰ ÁN SANG MÁY TÍNH KHÁC (SEECUT STUDIO)
+====================================================================
+
+Gói đóng gói này đã bao gồm:
+1. Toàn bộ mã nguồn Studio (Next.js, React, Three.js, Canvas xyflow).
+2. Thư viện node_modules đã cài đặt đầy đủ (KHÔNG CẦN CHẠY npm install).
+3. Cơ sở dữ liệu SQLite (data/studio.db) lưu sẵn:
+   - Toàn bộ các project và sơ đồ Canvas ("khởi đầu mới", video, kịch bản, ảnh nhân vật...).
+   - Toàn bộ KHÓA API KEYS đã cấu hình (IOOAI, ElevenLabs, Stali/Bùi Hữu Thắng, DuomiAPI, PiAPI, RunningHub, AutoDL...).
+4. File sao lưu API keys dự phòng:
+   - API-KEYS-BACKUP.json (Đọc trực tiếp mã khóa)
+   - .env.local (Tự động nạp vào môi trường hệ thống)
+
+--------------------------------------------------------------------
+CÁCH CHẠY TRÊN MÁY TÍNH MỚI:
+--------------------------------------------------------------------
+Bước 1: Giải nén thư mục này vào bất kỳ ổ đĩa nào trên máy mới (Khuyên dùng D:\ hoặc C:\).
+Bước 2: Máy mới chỉ cần có cài sẵn Node.js (phiên bản v18 trở lên).
+        (Nếu chưa có Node.js, tải tại https://nodejs.org và cài đặt nhanh trong 1 phút).
+Bước 3: Nhấp đúp chuột vào file:
+        👉 CHAY-DU-AN.bat
+
+Trình duyệt sẽ tự động bật lên tại địa chỉ:
+        👉 http://localhost:3210/canvas/prj_06d6f1c9496a
+
+Mọi dữ liệu, node canvas, ảnh nhân vật, video và API key đều được giữ nguyên 100%!
+====================================================================

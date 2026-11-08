@@ -33,6 +33,21 @@ export interface StudioNodeData {
   masterPromptEn?: string;
   masterPromptVi?: string;
   masterPromptHighlights?: string[];
+  history?: Array<{
+    id?: string;
+    url: string;
+    kind?: "image" | "video";
+    name?: string;
+    label?: string;
+    createdAt?: number;
+    timestamp?: number;
+    model?: string;
+    modelId?: string;
+    prompt?: string;
+    duration?: number;
+    aspect?: string;
+  }>;
+  activeHistoryIndex?: number;
 }
 
 export type StudioNode = Node<StudioNodeData>;
@@ -74,6 +89,8 @@ export interface ResolvedInputs {
   modelImage?: string;
   garmentImage?: string;
   videoUrl?: string;
+  audioUrl?: string;
+  audios?: string[];
 }
 
 const LEGACY_HANDLES = new Set([
@@ -113,6 +130,8 @@ export function resolveInputs(nodeId: string, nodes: StudioNode[], edges: Edge[]
   let modelImage: string | undefined;
   let garmentImage: string | undefined;
   let videoUrl: string | undefined;
+  let audioUrl: string | undefined;
+  const audios: string[] = [];
 
   for (const edge of incoming) {
     const source = byId.get(edge.source);
@@ -164,6 +183,14 @@ export function resolveInputs(nodeId: string, nodes: StudioNode[], edges: Edge[]
       if (srcUrl) videoUrl = srcUrl;
       continue;
     }
+    if (role === "audio") {
+      const aUrl = (data.audioUrl as string) || (data.result?.url as string) || srcUrl;
+      if (aUrl) {
+        if (!audioUrl) audioUrl = aUrl;
+        audios.push(aUrl);
+      }
+      continue;
+    }
     if (!srcUrl) continue;
     images.push(srcUrl);
     if (role === "look") looks.push(srcUrl);
@@ -188,6 +215,8 @@ export function resolveInputs(nodeId: string, nodes: StudioNode[], edges: Edge[]
     modelImage,
     garmentImage,
     videoUrl,
+    audioUrl,
+    audios,
   };
 }
 
@@ -408,36 +437,109 @@ export async function runStudioNode(
   const isIooai = String(data.modelId).startsWith("iooai:");
   const inlineImage = isIooai ? sourceImage : await toDataUri(sourceImage);
 
-  // PiAPI's servers fetch reference images themselves — a data: URI or our own
-  // /api/files/... local path is unreachable from their side, only a real
-  // http(s) URL works. Filter to those and let the model fall back to
-  // text-to-video when none qualify. @Ảnh{n} in the prompt (inserted by the
-  // "@" mention picker) refers to the n-th image as connected — remap it to
-  // the n-th entry that actually survives the public-URL filter, so the tag
-  // still points at the right image once the list shrinks.
-  const taggedImages = inputs.images.map((url, i) => ({ url, tag: i + 1 }));
-  const publicEntries = taggedImages.filter((entry) => /^https?:\/\//i.test(entry.url)).slice(0, 9);
-  const publicImageUrls = publicEntries.map((entry) => entry.url);
-  const tagRemap = new Map(publicEntries.map((entry, newIndex) => [entry.tag, newIndex + 1]));
-  
-  // For multimodal vision models (Gemini), map @Ảnh1 -> Ảnh 1 (Image 1) so the LLM clearly understands the reference
-  const taggedPrompt = prompt.replace(/@Ảnh(\d+)/g, (match, numStr) => {
-    if (kind === "video" && publicEntries.length > 0) {
-      const mapped = tagRemap.get(Number(numStr));
-      return mapped ? `@image${mapped}` : match;
+  let chosenModelId = String(data.modelId);
+  const isSeedance = chosenModelId.toLowerCase().includes("seedance");
+  const isOmni = chosenModelId.toLowerCase().includes("omni");
+  const isSeedanceOrOmni = isSeedance || isOmni;
+
+  const rawSources = inputs.images.length > 0 ? inputs.images : (sourceImage ? [sourceImage] : []);
+  const maxAvailable = rawSources.length > 0 ? rawSources.length : 99;
+
+  let cleanPrompt = prompt.trim();
+  // Khắc phục trường hợp đầu câu bị mất tag chỉ còn dấu hai chấm ": Giữ đúng khuôn mặt..."
+  if (/^\s*:\s*/.test(cleanPrompt)) {
+    cleanPrompt = `[@Image 1]: ${cleanPrompt.replace(/^\s*:\s*/, "")}`;
+  }
+
+  // 1. Chuẩn hóa các tag có số thứ tự rõ ràng: [@Image 1], @Ảnh 1, @ảnh1, @image1, @1
+  const usedNumbers = new Set<number>();
+  cleanPrompt = cleanPrompt.replace(/(?:\[@(?:Image|image)\s*(\d+)\]|@(?:image|Image|Ảnh|ảnh)\s*(\d+)|@(\d+)\b)/gi, (match, n1, n2, n3) => {
+    const rawNum = Number(n1 || n2 || n3);
+    const num = Math.min(maxAvailable, Math.max(1, rawNum));
+    usedNumbers.add(num);
+    if (kind === "video") {
+      return isSeedanceOrOmni ? `[@Image ${num}]` : `@image${num}`;
     }
-    return `Ảnh ${numStr} (Image ${numStr})`;
+    return `Ảnh ${num} (Image ${num})`;
   });
+
+  // 2. Tự động nhận diện và ánh xạ các tag đặt tên tiếng Việt (@Ảnh_bối_cảnh_tổng, @Ảnh_cầu_thang_góc_ngang, @Ảnh_nhân_vật...)
+  const namedTagMap = new Map<string, number>();
+  let nextAvailable = 1;
+
+  cleanPrompt = cleanPrompt.replace(/@(?:Ảnh|ảnh|image|Image)[_-]([a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF]+)/gi, (match, name) => {
+    const key = name.toLowerCase();
+    if (!namedTagMap.has(key)) {
+      while (usedNumbers.has(nextAvailable) && nextAvailable < maxAvailable) {
+        nextAvailable++;
+      }
+      const assigned = Math.min(maxAvailable, nextAvailable);
+      namedTagMap.set(key, assigned);
+      usedNumbers.add(assigned);
+      nextAvailable++;
+    }
+    const num = namedTagMap.get(key) || 1;
+    if (kind === "video") {
+      return isSeedanceOrOmni ? `[@Image ${num}]` : `@image${num}`;
+    }
+    return `Ảnh ${num} (Image ${num})`;
+  });
+
+  // 3. Tự động nhận diện, ánh xạ và chuẩn hóa tag Audio ([@Audio 1], @Âm_thanh_nam_chính...)
+  const availableAudios = (inputs.audios && inputs.audios.length > 0
+    ? inputs.audios
+    : inputs.audioUrl ? [inputs.audioUrl] : []
+  ).filter(Boolean);
+  const maxAvailableAudio = availableAudios.length;
+
+  if (maxAvailableAudio > 0) {
+    // Ánh xạ tag đặt tên tiếng Việt (@Âm_thanh_nam_chính, @Audio_nữ...)
+    const namedAudioMap = new Map<string, number>();
+    let nextAud = 1;
+    cleanPrompt = cleanPrompt.replace(/@(?:Âm_thanh|âm_thanh|Audio|audio|Giọng|giọng)[_-]([a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF]+)/gi, (match, name) => {
+      const key = name.toLowerCase();
+      if (!namedAudioMap.has(key)) {
+        const assigned = Math.min(maxAvailableAudio, nextAud);
+        namedAudioMap.set(key, assigned);
+        nextAud++;
+      }
+      return `[@Audio ${namedAudioMap.get(key) || 1}]`;
+    });
+
+    // Chuẩn hóa và giới hạn số thứ tự [@Audio N] không vượt quá số lượng audio đang kết nối
+    cleanPrompt = cleanPrompt.replace(/\[@(?:Audio|audio)\s*(\d+)\]/gi, (match, n1) => {
+      const num = Math.min(maxAvailableAudio, Math.max(1, Number(n1)));
+      return `[@Audio ${num}]`;
+    });
+  } else {
+    // Nếu chưa nối file audio nào, xóa tag [@Audio N] để ByteDance không báo lỗi "Prompt references a missing audio"
+    cleanPrompt = cleanPrompt.replace(/\[@(?:Audio|audio)\s*\d+\]\s*:\s*[^\n\.]*[\n\.]?/gi, "");
+    cleanPrompt = cleanPrompt.replace(/\[@(?:Audio|audio)\s*\d+\]/gi, "");
+    cleanPrompt = cleanPrompt.replace(/@(?:Âm_thanh|âm_thanh|Audio|audio|Giọng|giọng)[_-][a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF]+/gi, "giọng thoại");
+  }
+
+  const taggedPrompt = cleanPrompt;
   const aspect = (data.aspect as string | undefined) ?? "16:9";
 
-  const allImages = inputs.images.length > 0 ? inputs.images : (sourceImage ? [sourceImage] : []);
+  const allImages = rawSources;
   const inlineImages = isIooai ? allImages : await Promise.all(allImages.map(toDataUri));
+  // Preserve the selected model/provider. Unsupported inputs must fail visibly;
+  // never spend on a different model without the user's selection.
 
-  let chosenModelId = String(data.modelId);
-  // Auto-route to multimodal vision model if user connected reference images to a text-only image model
-  if (kind === "image" && allImages.length > 0) {
-    if (chosenModelId === "req/gpt-image-2" || chosenModelId === "seed:image:gpt-image" || chosenModelId === "iooai:gpt-image-2-4k") {
-      chosenModelId = "req/gemini-3.0-pro-image";
+  const mid = chosenModelId.toLowerCase();
+  if ((mid.includes("fast") || mid.includes("mini")) && mid.includes("seedance") && rawSources.length === 0) {
+    throw new Error("Mô hình Seedance 2.0 Fast/Mini yêu cầu ít nhất 1 ảnh tham chiếu. Hãy kéo dây nối ảnh vào khối này trước khi chạy.");
+  }
+
+  // Pre-validate image references against wired sources to prevent provider errors
+  const tagMatches = Array.from(taggedPrompt.matchAll(/\[@Image\s*(\d+)\]/gi));
+  if (tagMatches.length > 0) {
+    const maxRef = Math.max(...tagMatches.map((m) => parseInt(m[1], 10)));
+    if (rawSources.length === 0) {
+      throw new Error(`Câu lệnh đang nhắc đến [@Image ${maxRef}], nhưng khối chưa được nối ảnh nào. Hãy kéo dây nối ảnh vào khối trước khi chạy.`);
+    }
+    if (maxRef > rawSources.length) {
+      throw new Error(`Câu lệnh đang nhắc đến [@Image ${maxRef}], nhưng khối chỉ đang nối ${rawSources.length} ảnh. Hãy nối thêm ảnh tương ứng vào cổng bên trái hoặc chỉnh lại số thứ tự tag.`);
     }
   }
 
@@ -452,19 +554,24 @@ export async function runStudioNode(
       images: isIooai ? allImages : inlineImages,
       modelImage: inputs.modelImage ? await toDataUri(inputs.modelImage) : inlineImages[0],
       garmentImage: inputs.garmentImage ? await toDataUri(inputs.garmentImage) : inlineImages[1],
-      video: inputs.videoUrl ?? (data.videoUrl as string | undefined),
-      videoUrl: inputs.videoUrl ?? (data.videoUrl as string | undefined),
+      video: inputs.videoUrl,
+      videoUrl: inputs.videoUrl,
+      audio: inputs.audioUrl,
+      audioUrl: inputs.audioUrl,
+      audios: inputs.audios ?? [],
+      audioMode: (data.audioMode as string | undefined) ?? "reference",
       workflowId: (data.workflowId as string | undefined) ?? "",
-      duration: data.duration ?? 5,
+      duration: data.duration ?? 10,
+      seconds: String(data.duration ?? 10),
       aspect,
       size: sizeFor(aspect, kind === "video" ? "video" : "image"),
       seed: data.seed ?? Math.floor(Math.random() * 1_000_000),
       scale: data.scale ?? 2,
-      imageUrls: publicImageUrls,
+      imageUrls: rawSources,
       piapiMode:
-        publicImageUrls.length > 2
+        rawSources.length > 2
           ? "omni_reference"
-          : publicImageUrls.length > 0
+          : rawSources.length > 0
             ? "first_last_frames"
             : "text_to_video",
       piapiDuration: Math.min(15, Math.max(4, Number(data.duration ?? 10))),

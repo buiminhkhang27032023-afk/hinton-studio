@@ -76,6 +76,17 @@ export function getDb(): DatabaseSync {
       updated_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS muse_tasks (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      title TEXT,
+      prompt TEXT NOT NULL,
+      media TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      result TEXT,
+      created_at INTEGER NOT NULL
+    );
+
     -- Persistent knowledge: what a character, a look or a style actually is,
     -- learned by having a vision model read the user's reference images.
     CREATE TABLE IF NOT EXISTS memory (
@@ -122,6 +133,15 @@ export function getDb(): DatabaseSync {
     CREATE INDEX IF NOT EXISTS idx_memory_kind ON memory(kind);
     CREATE INDEX IF NOT EXISTS idx_analyses_project ON analyses(project_id);
   `);
+  // Additive migration: keep historical jobs intact, including unresolved tasks.
+  const jobColumns = db.prepare("PRAGMA table_info(jobs)").all() as { name: string }[];
+  if (!jobColumns.some((column) => column.name === "recovery")) {
+    db.exec("ALTER TABLE jobs ADD COLUMN recovery TEXT");
+  }
+  if (!jobColumns.some((column) => column.name === "request_key")) {
+    db.exec("ALTER TABLE jobs ADD COLUMN request_key TEXT");
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_request_key ON jobs(request_key) WHERE request_key IS NOT NULL");
   return db;
 }
 

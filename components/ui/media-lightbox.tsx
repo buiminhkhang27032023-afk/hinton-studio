@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useUi } from "@/lib/ui-store";
+import { useStudio } from "@/lib/studio-store";
 import { withBasePath } from "@/lib/base-path";
 import {
   X,
@@ -11,7 +12,12 @@ import {
   Download,
   Copy,
   Sparkles,
-  Maximize2,
+  Scissors,
+  Play,
+  Pause,
+  Film,
+  Camera,
+  Loader2,
 } from "lucide-react";
 
 export function MediaLightbox({
@@ -20,17 +26,29 @@ export function MediaLightbox({
   onReuse?: (url: string, kind?: "image" | "video") => void;
 }) {
   const { lightbox, closeLightbox, toast } = useUi();
+  const project = useStudio((s) => s.project);
   const [scale, setScale] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const posStart = useRef({ x: 0, y: 0 });
 
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoTime, setVideoTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [isExtracting, setIsExtracting] = useState<string | null>(null);
+  const [showCutModal, setShowCutModal] = useState(false);
+  const [cutStart, setCutStart] = useState(0);
+  const [cutEnd, setCutEnd] = useState(5);
+  const [isCutting, setIsCutting] = useState(false);
+
   // Reset zoom & pan on open
   useEffect(() => {
     if (lightbox) {
       setScale(1);
       setPos({ x: 0, y: 0 });
+      setVideoTime(0);
+      setShowCutModal(false);
     }
   }, [lightbox]);
 
@@ -87,6 +105,75 @@ export function MediaLightbox({
     setIsDragging(false);
   }, []);
 
+  // Frame extraction handler
+  const handleExtractFrame = async (mode: "first" | "last" | "current") => {
+    if (!lightbox) return;
+    const prjId = project?.id || "prj_default";
+    const currT = videoRef.current?.currentTime || videoTime || 0;
+    setIsExtracting(mode);
+
+    try {
+      const res = await fetch("/api/video/extract-frame", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: prjId,
+          videoUrl: lightbox.url,
+          mode,
+          time: currT,
+        }),
+      });
+
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || "Không thể trích xuất khung hình");
+
+      const label = mode === "first" ? "cảnh đầu" : mode === "last" ? "cảnh cuối" : `cảnh đang dừng (${currT.toFixed(1)}s)`;
+      toast(`Đã trích xuất ${label} thành công! Đang thêm vào Canvas...`, "success");
+
+      if (onReuse) {
+        onReuse(resData.url, "image");
+      }
+    } catch (e: any) {
+      toast("Lỗi trích xuất frame: " + (e.message || String(e)), "error");
+    } finally {
+      setIsExtracting(null);
+    }
+  };
+
+  // Video trimming handler
+  const handleCutVideo = async () => {
+    if (!lightbox) return;
+    const prjId = project?.id || "prj_default";
+    setIsCutting(true);
+
+    try {
+      const res = await fetch("/api/video/cut", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: prjId,
+          videoUrl: lightbox.url,
+          startTime: cutStart,
+          endTime: cutEnd,
+        }),
+      });
+
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || "Cắt video thất bại");
+
+      toast(`Đã cắt đoạn clip ${cutStart}s - ${cutEnd}s thành công!`, "success");
+      setShowCutModal(false);
+
+      if (onReuse) {
+        onReuse(resData.url, "video");
+      }
+    } catch (e: any) {
+      toast("Lỗi cắt video: " + (e.message || String(e)), "error");
+    } finally {
+      setIsCutting(false);
+    }
+  };
+
   if (!lightbox) return null;
 
   const isVid =
@@ -102,18 +189,78 @@ export function MediaLightbox({
       onMouseUp={handleMouseUp}
     >
       {/* Top Floating Control Bar */}
-      <header className="flex h-14 w-full items-center justify-between border-b border-white/10 px-5 bg-black/40">
+      <header className="flex h-14 w-full items-center justify-between border-b border-white/10 px-5 bg-black/50">
         <div className="flex items-center gap-3">
           <span className="text-[13px] font-semibold tracking-wide text-white/90">
-            {lightbox.title || (isVid ? "Xem Video Chi Tiết" : "Phóng To Ảnh")}
+            {lightbox.title || (isVid ? "Xem & Cắt Cảnh Video" : "Phóng To Ảnh")}
           </span>
           <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-mono text-white/60">
-            {Math.round(scale * 100)}%
+            {isVid ? `${videoTime.toFixed(1)}s / ${videoDuration.toFixed(1)}s` : `${Math.round(scale * 100)}%`}
           </span>
         </div>
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {/* Dedicated Video Frame Extraction Controls */}
+          {isVid && (
+            <div className="flex items-center gap-1.5 bg-white/5 border border-white/15 rounded-lg px-2 py-1 mr-2">
+              <span className="text-[11px] font-medium text-amber-300 flex items-center gap-1 mr-1">
+                <Film size={12} /> Cắt cảnh:
+              </span>
+
+              {/* First Frame */}
+              <button
+                type="button"
+                onClick={() => handleExtractFrame("first")}
+                disabled={Boolean(isExtracting)}
+                className="flex items-center gap-1 rounded bg-white/10 hover:bg-amber-500 hover:text-black px-2 py-0.5 text-[11px] font-medium text-white transition disabled:opacity-50"
+                title="Trích xuất khung hình đầu tiên của video (0.0s)"
+              >
+                {isExtracting === "first" ? <Loader2 size={11} className="animate-spin" /> : <Play size={10} />}
+                <span>Cảnh đầu</span>
+              </button>
+
+              {/* Current / Paused Frame */}
+              <button
+                type="button"
+                onClick={() => handleExtractFrame("current")}
+                disabled={Boolean(isExtracting)}
+                className="flex items-center gap-1 rounded bg-amber-500/20 border border-amber-400/40 hover:bg-amber-500 hover:text-black px-2 py-0.5 text-[11px] font-medium text-amber-200 transition disabled:opacity-50"
+                title={`Trích xuất khung hình tại thời điểm video đang tạm dừng (${videoTime.toFixed(1)}s)`}
+              >
+                {isExtracting === "current" ? <Loader2 size={11} className="animate-spin" /> : <Pause size={10} />}
+                <span>Cảnh dừng ({videoTime.toFixed(1)}s)</span>
+              </button>
+
+              {/* Last Frame */}
+              <button
+                type="button"
+                onClick={() => handleExtractFrame("last")}
+                disabled={Boolean(isExtracting)}
+                className="flex items-center gap-1 rounded bg-white/10 hover:bg-amber-500 hover:text-black px-2 py-0.5 text-[11px] font-medium text-white transition disabled:opacity-50"
+                title="Trích xuất khung hình cuối cùng của video"
+              >
+                {isExtracting === "last" ? <Loader2 size={11} className="animate-spin" /> : <Camera size={10} />}
+                <span>Cảnh cuối</span>
+              </button>
+
+              {/* Cut / Trim Clip */}
+              <button
+                type="button"
+                onClick={() => {
+                  setCutStart(Math.max(0, Number(videoTime.toFixed(1))));
+                  setCutEnd(Math.min(videoDuration || 15, Number((videoTime + 5).toFixed(1))));
+                  setShowCutModal(!showCutModal);
+                }}
+                className="flex items-center gap-1 rounded bg-cyan-500/20 border border-cyan-400/40 hover:bg-cyan-500 hover:text-black px-2 py-0.5 text-[11px] font-medium text-cyan-200 transition"
+                title="Cắt lấy một đoạn clip từ video"
+              >
+                <Scissors size={10} />
+                <span>Cắt clip</span>
+              </button>
+            </div>
+          )}
+
           {!isVid && (
             <>
               <button
@@ -200,6 +347,60 @@ export function MediaLightbox({
         </div>
       </header>
 
+      {/* Video Cut Popup Dialog */}
+      {showCutModal && isVid && (
+        <div className="bg-[#181820] border-b border-white/10 px-5 py-3 flex items-center justify-center gap-4 text-[12px] z-10 shadow-2xl">
+          <span className="font-medium text-cyan-300 flex items-center gap-1.5">
+            <Scissors size={14} /> Cắt đoạn clip:
+          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-white/70">Từ:</span>
+            <input
+              type="number"
+              min={0}
+              max={cutEnd}
+              step={0.5}
+              value={cutStart}
+              onChange={(e) => setCutStart(parseFloat(e.target.value) || 0)}
+              className="w-16 rounded border border-white/15 bg-white/5 px-2 py-0.5 text-center text-white"
+            />
+            <span className="text-white/70">giây</span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-white/70">Đến:</span>
+            <input
+              type="number"
+              min={cutStart}
+              max={videoDuration || 100}
+              step={0.5}
+              value={cutEnd}
+              onChange={(e) => setCutEnd(parseFloat(e.target.value) || 5)}
+              className="w-16 rounded border border-white/15 bg-white/5 px-2 py-0.5 text-center text-white"
+            />
+            <span className="text-white/70">giây (Thời lượng: {(cutEnd - cutStart).toFixed(1)}s)</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleCutVideo}
+            disabled={isCutting}
+            className="flex items-center gap-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 px-3 py-1 font-medium text-black transition shadow"
+          >
+            {isCutting ? <Loader2 size={12} className="animate-spin" /> : <Scissors size={12} />}
+            <span>{isCutting ? "Đang xuất clip…" : "Tạo đoạn clip"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowCutModal(false)}
+            className="text-white/50 hover:text-white"
+          >
+            Hủy
+          </button>
+        </div>
+      )}
+
       {/* Main View Area */}
       <div
         className="relative flex-1 overflow-hidden grid place-items-center cursor-default"
@@ -210,10 +411,16 @@ export function MediaLightbox({
         {isVid ? (
           <div className="max-h-[85vh] max-w-[90vw] flex items-center justify-center">
             <video
+              ref={videoRef}
               src={fullUrl}
               controls
               autoPlay
               playsInline
+              onTimeUpdate={(e) => setVideoTime(e.currentTarget.currentTime)}
+              onLoadedMetadata={(e) => {
+                setVideoDuration(e.currentTarget.duration);
+                setCutEnd(Math.min(e.currentTarget.duration, 5));
+              }}
               className="max-h-[85vh] max-w-[90vw] rounded-xl shadow-2xl border border-white/10 bg-black"
             />
           </div>
@@ -245,7 +452,13 @@ export function MediaLightbox({
         )}
 
         {/* Bottom Helper Hint */}
-        {!isVid && (
+        {isVid ? (
+          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-black/60 px-3.5 py-1 text-[11px] text-white/60 backdrop-blur-md flex items-center gap-2">
+            <span>Tạm dừng video bất kỳ lúc nào và bấm</span>
+            <span className="text-amber-300 font-medium">"Cảnh dừng"</span>
+            <span>để cắt khung hình làm ảnh mẫu cho Canvas</span>
+          </div>
+        ) : (
           <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-black/60 px-3.5 py-1 text-[11px] text-white/50 backdrop-blur-md">
             Lăn chuột để phóng to/thu nhỏ • Nhấp đúp để đổi kích thước • Kéo để di chuyển • Phím ESC để đóng
           </div>

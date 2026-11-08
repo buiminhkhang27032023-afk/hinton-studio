@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import os from "node:os";
-import { ASSET_DIR, getDb, now, uid } from "./db";
+import { ASSET_DIR, getDb, getSetting, now, uid } from "./db";
 import { getProvider } from "./provider";
 import { localUrlToDataUri } from "./storage";
 
@@ -166,6 +166,7 @@ export function listAnalyses(projectId?: string, limit = 30): Analysis[] {
 const VISION_MODEL = "gpt-5.6-luna";
 
 async function chatWithImage(prompt: string, imageDataUri: string): Promise<string> {
+  if (getSetting<boolean>("model_calls_paused", false) === true) throw new Error("Đã khóa gọi model theo yêu cầu của bạn.");
   const provider = getProvider();
   if (!provider.apiKey) throw new Error("Chưa cấu hình API key.");
 
@@ -321,6 +322,7 @@ export interface VideoAnalysis {
 
 /** Have the vision model read a finished clip and say what to keep or fix. */
 export async function analyseVideo(assetUrl: string): Promise<VideoAnalysis> {
+  if (getSetting<boolean>("model_calls_paused", false) === true) throw new Error("Đã khóa gọi model theo yêu cầu của bạn.");
   const frames = await extractFrames(assetUrl, 4);
   if (!frames.length) throw new Error("Không trích được khung hình từ video.");
 

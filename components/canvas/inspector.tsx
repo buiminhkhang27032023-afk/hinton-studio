@@ -13,6 +13,8 @@ import { PROVIDER_METAS, resolveProvider, durationOptions, getDefaultDuration, t
 import type { Edge } from "@xyflow/react";
 import { MasterPromptSection } from "./master-prompt-section";
 import { MentionTextarea, getConnectedImageTags } from "./nodes";
+import { JobRecoveryPanel } from "./job-recovery-panel";
+import { api } from "@/lib/api-client";
 
 export function Inspector({
   node,
@@ -40,6 +42,10 @@ export function Inspector({
   const [providerFilter, setProviderFilter] = useState<ProviderId>("all");
   const [familyFilter, setFamilyFilter] = useState<string>("all");
   const lastRunTimeRef = useRef(0);
+  const [callsPaused, setCallsPaused] = useState(true);
+  useEffect(() => {
+    api.settings.get().then((settings) => setCallsPaused(settings.modelCallsPaused)).catch(() => setCallsPaused(true));
+  }, []);
 
   const handleImmediateRun = useCallback(
     (e?: React.SyntheticEvent) => {
@@ -215,6 +221,8 @@ export function Inspector({
           {data.status === "running" && <Badge tone="violet">{tr("node.running")}</Badge>}
           {data.status === "error" && <Badge tone="red">{tr("node.failed")}</Badge>}
         </div>
+
+        {Boolean(data.identityNeedsReview) && <p className="rounded-lg border border-amber-400/30 bg-amber-400/5 p-2 text-[12px] text-amber-300">Cần kiểm tra khuôn mặt với ảnh gốc trước khi dùng tiếp để tạo video.</p>}
 
         {node.type === "prompt" && (
           <div className="space-y-3">
@@ -832,11 +840,12 @@ export function Inspector({
 
       {!["prompt", "image", "result"].includes(node.type ?? "") && (
         <div className="border-t border-ink-700/60 p-3">
+          {callsPaused && <p className="mb-3 text-[12px] text-amber-300">Đã khóa gọi model để tránh phát sinh chi phí. Chỉ mở lại sau khi bạn cho phép.</p>}
+          {kind === "video" && <JobRecoveryPanel key={`${node.id}:${data.status}`} nodeId={node.id} onRecovered={(asset) => onPatch(node.id, { status: "done", error: null, result: asset, videoUrl: asset.url })} />}
           <Button
             variant="primary"
             className="w-full"
-            disabled={data.status === "running"}
-            onMouseDown={handleImmediateRun}
+            disabled={callsPaused || data.status === "running"}
             onClick={handleImmediateRun}
           >
             {data.status === "running" ? (

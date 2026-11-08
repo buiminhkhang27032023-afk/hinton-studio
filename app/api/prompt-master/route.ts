@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { pausedModelResponse } from "@/lib/model-call-guard";
 import { getProvider } from "@/lib/provider";
 
 export const runtime = "nodejs";
@@ -10,7 +11,7 @@ const SYSTEM_PROMPT = `Bạn là "Bậc Thầy Viết Prompt" (AI Master Prompt 
 Nhiệm vụ: Khi nhận được một ý tưởng thô sơ hoặc câu lệnh ngắn từ người dùng (bằng tiếng Việt hoặc tiếng Anh), hãy nâng cấp và hoàn thiện nó thành một Master Prompt chuẩn điện ảnh, chi tiết và sống động nhất.
 
 Quy tắc tối thượng:
-1. TUYỆT ĐỐI BẢO TOÀN ý định gốc của người dùng. Nếu có các tag tham chiếu như @Ảnh1, @Ảnh2, @image1... BẮT BUỘC giữ nguyên chính xác vị trí và tên tag trong prompt hoàn thiện.
+1. TUYỆT ĐỐI BẢO TOÀN ý định gốc của người dùng. Nếu có các tag tham chiếu như [@Image 1], [@Image 2], @Ảnh1, @Ảnh2, @image1... BẮT BUỘC giữ nguyên chuẩn [@Image 1], [@Image 2] trong cả 2 bản enhancedPrompt và enhancedPromptVi để mô hình video (Seedance, Omni) bám đúng từng ảnh tham chiếu.
 2. Thêm các yếu tố điện ảnh đỉnh cao:
    - Chủ thể: biểu cảm khuôn mặt sống động, cử chỉ tự nhiên, trang phục, kết cấu da chân thực.
    - Góc máy & chuyển động: cinematic tracking shot, slow pan, eye-level, rule of thirds, shallow depth of field, 8k resolution.
@@ -27,6 +28,8 @@ Quy tắc tối thượng:
 }`;
 
 export async function POST(request: Request) {
+  const paused = pausedModelResponse();
+  if (paused) return paused;
   try {
     const body = (await request.json()) as {
       prompt?: string;

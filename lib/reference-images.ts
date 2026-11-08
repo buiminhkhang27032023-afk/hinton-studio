@@ -17,9 +17,25 @@ import { localUrlToDataUri, resolveLocalAssetPath } from "./storage";
 
 const UPLOAD_ENDPOINT = "https://upload.theapi.app/api/ephemeral_resource";
 
+/** Reject expired links and HTML/error responses before a paid submission. */
+export async function assertReferenceReachable(url: string): Promise<void> {
+  if (!/^https:\/\//i.test(url)) throw new Error("Tệp tham chiếu cần URL HTTPS công khai.");
+  let response: Response;
+  try {
+    response = await fetch(url, { headers: { Range: "bytes=0-511" }, signal: AbortSignal.timeout(20_000), redirect: "follow" });
+  } catch {
+    throw new Error("Không truy cập được tệp tham chiếu. Chưa gửi lệnh tạo hoặc phát sinh lượt model.");
+  }
+  const mime = response.headers.get("content-type") ?? "";
+  await response.body?.cancel();
+  if (!response.ok || (!mime.startsWith("image/") && !mime.startsWith("video/") && !mime.startsWith("audio/") && !mime.startsWith("application/octet-stream"))) {
+    throw new Error(`Tệp tham chiếu không tải được hoặc không đúng định dạng (HTTP ${response.status}). Chưa gửi lệnh tạo.`);
+  }
+}
+
 export async function prepareReferenceImages(sources: unknown[]): Promise<string[]> {
-  if (!sources.length || sources.length > 7) {
-    throw new Error("Cần 1–7 ảnh tham chiếu.");
+  if (!sources.length || sources.length > 10) {
+    throw new Error("Cần 1–10 ảnh tham chiếu.");
   }
 
   const usingTunnel = hasPublicBase();
@@ -34,12 +50,17 @@ export async function prepareReferenceImages(sources: unknown[]): Promise<string
       continue;
     }
 
-    // Preferred path: serve the file through our own public base URL.
+    // Preferred path: serve the file through our own public base URL if alive.
     if (usingTunnel) {
       const publicUrl = toProviderUrl(source);
       if (/^https:\/\//i.test(publicUrl) && !publicUrl.includes("localhost")) {
-        urls.push(publicUrl);
-        continue;
+        try {
+          await assertReferenceReachable(publicUrl);
+          urls.push(publicUrl);
+          continue;
+        } catch {
+          console.warn("Tunnel URL không truy cập được, chuyển sang Tencent Cloud CDN:", publicUrl);
+        }
       }
     }
 
@@ -70,6 +91,21 @@ export async function prepareReferenceMedia(source: string): Promise<string> {
   return await uploadToRunningHub(source);
 }
 
+export async function prepareReferenceAudios(sources: unknown[]): Promise<string[]> {
+  const urls: string[] = [];
+  for (const source of sources) {
+    if (typeof source !== "string" || !source.trim()) continue;
+    const trimmed = source.trim();
+    if (/^https:\/\//i.test(trimmed)) {
+      urls.push(trimmed);
+      continue;
+    }
+    const uploaded = await prepareReferenceMedia(trimmed);
+    if (uploaded) urls.push(uploaded);
+  }
+  return urls;
+}
+
 export async function uploadToRunningHub(source: string): Promise<string> {
   let bytes: Buffer;
   let mime = "image/jpeg";
@@ -86,6 +122,11 @@ export async function uploadToRunningHub(source: string): Promise<string> {
     else if (extname === "png") mime = "image/png";
     else if (extname === "webp") mime = "image/webp";
     else if (extname === "gif") mime = "image/gif";
+    else if (extname === "mp3") mime = "audio/mpeg";
+    else if (extname === "wav") mime = "audio/wav";
+    else if (extname === "m4a") mime = "audio/mp4";
+    else if (extname === "aac") mime = "audio/aac";
+    else if (extname === "ogg") mime = "audio/ogg";
     else mime = "image/jpeg";
     ext = extname || "jpg";
   } else if (source.startsWith("data:")) {
@@ -95,7 +136,7 @@ export async function uploadToRunningHub(source: string): Promise<string> {
     const base64Data = source.slice(commaIdx + 1);
     const mimeMatch = /^data:([^;,]+)/i.exec(prefix);
     mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
-    ext = mime.includes("png") ? "png" : mime.includes("mp4") ? "mp4" : mime.includes("webp") ? "webp" : "jpg";
+    ext = mime.includes("png") ? "png" : mime.includes("mp4") ? "mp4" : mime.includes("mp3") ? "mp3" : mime.includes("wav") ? "wav" : mime.includes("webp") ? "webp" : "jpg";
     bytes = Buffer.from(base64Data, "base64");
   } else if (/^https?:\/\//i.test(source)) {
     return source;
@@ -109,7 +150,14 @@ export async function uploadToRunningHub(source: string): Promise<string> {
   const hash = createHash("sha256").update(bytes).digest("hex");
   const cacheKey = `rh_upload:${hash}`;
   const cached = getSetting<{ url: string; expires: number } | null>(cacheKey, null);
-  if (cached && cached.expires > Date.now()) return cached.url;
+  if (cached && cached.expires > Date.now()) {
+    try {
+      await assertReferenceReachable(cached.url);
+      return cached.url;
+    } catch {
+      setSetting(cacheKey, null);
+    }
+  }
 
   const formData = new FormData();
   const blob = new Blob([bytes as unknown as BlobPart], { type: mime });
@@ -140,7 +188,7 @@ export async function uploadToRunningHub(source: string): Promise<string> {
   return url;
 }
 
-async function uploadToPiApi(source: string): Promise<string> {
+export async function uploadToPiApi(source: string): Promise<string> {
   const inline = localUrlToDataUri(source);
   if (!inline.startsWith("data:image/")) throw new Error("Không đọc được ảnh từ thư viện.");
   const commaIdx = inline.indexOf(",");

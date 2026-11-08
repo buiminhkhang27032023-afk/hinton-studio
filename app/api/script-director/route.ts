@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { pausedModelResponse } from "@/lib/model-call-guard";
 import { getProvider } from "@/lib/provider";
 import { listAssets } from "@/lib/storage";
 import { listModels } from "@/lib/models";
@@ -72,6 +73,8 @@ export interface ProductionPlan {
 }
 
 export async function POST(request: Request) {
+  const paused = pausedModelResponse();
+  if (paused) return paused;
   try {
     const body = (await request.json()) as {
       script?: string;

@@ -61,12 +61,16 @@ export function getGraph(projectId: string): GraphPayload {
   try {
     const jobs = getDb()
       .prepare(
-        "SELECT node_id, status, output FROM jobs WHERE project_id = ? AND status = 'succeeded' ORDER BY updated_at ASC",
+        "SELECT node_id, status, output FROM jobs WHERE project_id = ? ORDER BY created_at DESC",
       )
       .all(projectId) as { node_id: string; status: string; output: string }[];
     if (jobs && jobs.length > 0) {
       const jobMap = new Map<string, any>();
+      const seen = new Set<string>();
       for (const j of jobs) {
+        if (!j.node_id || seen.has(j.node_id)) continue;
+        seen.add(j.node_id);
+        if (j.status !== "succeeded") continue;
         if (j.node_id && j.output) {
           try {
             jobMap.set(j.node_id, JSON.parse(j.output));
@@ -75,7 +79,7 @@ export function getGraph(projectId: string): GraphPayload {
       }
       for (const n of graph.nodes as any[]) {
         const nodeData = n.data as any;
-        if ((!nodeData?.result || nodeData?.status === "running") && jobMap.has(n.id)) {
+        if (n.type !== "image" && (!nodeData?.result || nodeData?.status === "running") && jobMap.has(n.id)) {
           const out = jobMap.get(n.id);
           n.data = {
             ...nodeData,

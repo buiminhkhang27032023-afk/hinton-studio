@@ -5,6 +5,118 @@ import type { ModelConfig, ModelKind, ModelRecord } from "./types";
  * Built-in presets. Synchronized with all providers (IOOAI, RunningHub, Alibaba Bailian, AutoDL, SiliconFlow, Kling, 302.AI, etc.).
  */
 const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
+{
+    "id": "muse:musetalk",
+    "label": "Muse AI · MuseTalk (Audio-Driven Real-time LipSync)",
+    "kind": "video",
+    "provider": "muse",
+    "description": "MuseTalk đồng bộ khẩu hình môi thời gian thực từ file âm thanh/giọng nói vào ảnh hoặc video nhân vật.",
+    "config": {
+        "endpoint": "/musetalk/lip-sync",
+        "method": "POST",
+        "body": {
+            "face_url": "{{image}}",
+            "video_url": "{{video}}",
+            "audio_url": "{{audio}}",
+            "prompt": "{{prompt}}"
+        },
+        "jobPath": "id",
+        "pollEndpoint": "/musetalk/status/{{job}}",
+        "statusPath": "status",
+        "doneValues": [
+            "completed",
+            "success",
+            "succeeded"
+        ],
+        "failedValues": [
+            "failed",
+            "error"
+        ],
+        "resultPath": "output_url",
+        "timeout": 600
+    }
+},
+{
+    "id": "muse:musev",
+    "label": "Muse AI · MuseV (Virtual Human Video Generation)",
+    "kind": "video",
+    "provider": "muse",
+    "description": "MuseV tạo video người ảo độ phân giải cao, chuyển động tự nhiên theo âm thanh/giọng nói và ảnh nhân vật.",
+    "config": {
+        "endpoint": "/musev/generate",
+        "method": "POST",
+        "body": {
+            "image_url": "{{image}}",
+            "audio_url": "{{audio}}",
+            "prompt": "{{prompt}}",
+            "ratio": "{{aspect}}"
+        },
+        "jobPath": "id",
+        "pollEndpoint": "/musev/status/{{job}}",
+        "statusPath": "status",
+        "doneValues": [
+            "completed",
+            "success",
+            "succeeded"
+        ],
+        "failedValues": [
+            "failed",
+            "error"
+        ],
+        "resultPath": "output_url",
+        "timeout": 900
+    }
+},
+  {
+    "id": "omnivoice:male-vn-v2",
+    "label": "🎙️ OmniVoice · Giọng Nam Chuẩn Voice-Lock v2 (1.2x Tốc Độ)",
+    "kind": "audio",
+    "provider": "omnivoice",
+    "description": "Tổng hợp giọng đọc chuẩn Hinton Media: Khóa giọng nam v2 (voice-lock), tốc độ 1.2x dứt khoát ~4.6 âm tiết/giây.",
+    "config": {
+      "endpoint": "/api/audio/tts",
+      "method": "POST",
+      "body": {
+        "text": "{{prompt}}",
+        "voice": "omnivoice",
+        "speed": 1.2,
+        "language": "vi"
+      },
+      "resultPath": "url",
+      "timeout": 300
+    }
+  },
+  {
+    "id": "muse:voice-clone",
+    "label": "Muse AI · MuseVoice (Voice Clone & Giọng nói từ âm thanh mẫu)",
+    "kind": "audio",
+    "provider": "muse",
+    "description": "Nhân bản giọng nói (voice clone) từ file âm thanh mẫu; tổng hợp giọng đọc tiếng Việt/Anh chuẩn xác.",
+    "config": {
+        "endpoint": "/audio/voice-clone",
+        "method": "POST",
+        "body": {
+            "text": "{{prompt}}",
+            "reference_audio": "{{audio}}",
+            "language": "vi",
+            "speed": 1.0
+        },
+        "jobPath": "id",
+        "pollEndpoint": "/audio/status/{{job}}",
+        "statusPath": "status",
+        "doneValues": [
+            "completed",
+            "success",
+            "succeeded"
+        ],
+        "failedValues": [
+            "failed",
+            "error"
+        ],
+        "resultPath": "audio_url",
+        "timeout": 300
+    }
+},
   {
     "id": "302ai:kling-v1.5",
     "label": "302.AI · Kling 1.5 Video (Hỗ trợ 5s & 10s)",
@@ -504,10 +616,10 @@ const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
   },
   {
     "id": "iooai:omni_flash_10s",
-    "label": "IOOAI · Omni Flash 10s (Video 10 giây nhanh)",
+    "label": "IOOAI · Omni Flash 10s (Video 10 giây nhanh · 0.8 Tệ)",
     "kind": "video",
     "provider": "iooai",
-    "description": "Omni video 10 giây tốc độ cao.",
+    "description": "Omni video 10 giây tốc độ cao, hỗ trợ 1–7 ảnh tham chiếu người mẫu và trang phục.",
     "config": {
       "endpoint": "/videos",
       "method": "POST",
@@ -517,6 +629,36 @@ const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
         "seconds": "{{seconds}}",
         "ratio": "{{aspect}}",
         "resolution": "{{resolution}}",
+        "images": "{{images}}"
+      },
+      "jobPath": "id",
+      "pollEndpoint": "/videos/{{job}}",
+      "statusPath": "status",
+      "doneValues": [
+        "completed",
+        "success"
+      ],
+      "failedValues": [
+        "failed",
+        "error"
+      ],
+      "resultPath": "video_url",
+      "timeout": 900
+    }
+  },
+  {
+    "id": "iooai:omni 可编辑视频",
+    "label": "IOOAI · Omni Video Editor (Tham chiếu & Sửa Video · 1.65 Tệ)",
+    "kind": "video",
+    "provider": "iooai",
+    "description": "Mô hình chuyên nhận Video tham chiếu có sẵn để đổi nhân vật, đổi bối cảnh hoặc làm mới phong cách (Video-to-Video).",
+    "config": {
+      "endpoint": "/videos",
+      "method": "POST",
+      "body": {
+        "model": "omni 可编辑视频",
+        "prompt": "{{prompt}}",
+        "videos": "{{videos}}",
         "images": "{{images}}"
       },
       "jobPath": "id",
@@ -547,9 +689,9 @@ const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
         "model": "seedance 2.0 fast",
         "prompt": "{{prompt}}",
         "seconds": "{{duration}}",
-        "images": [
-          "{{image}}"
-        ]
+        "images": "{{images}}",
+        "audios": "{{audios}}",
+        "videos": "{{videos}}"
       },
       "jobPath": "id",
       "pollEndpoint": "/videos/{{job}}",
@@ -579,9 +721,9 @@ const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
         "model": "seedance 2.0 满血",
         "prompt": "{{prompt}}",
         "seconds": "{{duration}}",
-        "images": [
-          "{{image}}"
-        ]
+        "images": "{{images}}",
+        "audios": "{{audios}}",
+        "videos": "{{videos}}"
       },
       "jobPath": "id",
       "pollEndpoint": "/videos/{{job}}",
@@ -599,53 +741,123 @@ const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
     }
   },
   {
-    "id": "iooai:seedance2.5 LW",
-    "label": "IOOAI · Seedance 2.5 LW (Video ByteDance Cao cấp)",
+    "id": "iooai:seedance2.5 AT",
+    "label": "IOOAI · Seedance 2.5 AT (Trọn Gói 7.50 Tệ · 5–30s · Đủ Ảnh/Video/Audio)",
     "kind": "video",
     "provider": "iooai",
-    "description": "Seedance 2.5 bản LW chất lượng chi tiết cao cho hoạt cảnh và thời trang.",
+    "description": "Bản toàn năng Seedance 2.5 AT trọn gói 7.5 Tệ (5–30s, không đổi theo giây). Hỗ trợ tối đa 30 ảnh, 10 video và 10 audio tham chiếu cùng lúc.",
     "config": {
       "endpoint": "/videos",
       "method": "POST",
       "body": {
-        "model": "seedance2.5 LW",
+        "model": "seedance2.5 AT",
         "prompt": "{{prompt}}",
-        "seconds": "{{duration}}",
-        "images": [
-          "{{image}}"
-        ]
-      },
-      "jobPath": "id",
-      "pollEndpoint": "/videos/{{job}}",
-      "statusPath": "status",
-      "doneValues": [
-        "completed",
-        "success"
-      ],
-      "failedValues": [
-        "failed",
-        "error"
-      ],
-      "resultPath": "video_url",
-      "timeout": 900
-    }
-  },
-  {
-    "id": "iooai:seedance2.5 快速版",
-    "label": "IOOAI · Seedance 2.5 快速版 (Video 15s Sàn diễn & Điện ảnh)",
-    "kind": "video",
-    "provider": "iooai",
-    "description": "Mô hình video thế hệ mới của ByteDance qua IOOAI. Hỗ trợ đa ảnh tham chiếu, tạo video thời trang/runway 15 giây liên tục.",
-    "config": {
-      "endpoint": "/videos",
-      "method": "POST",
-      "body": {
-        "model": "seedance2.5 快速版",
-        "prompt": "{{prompt}}",
-        "seconds": "{{duration}}",
-        "resolution": "{{resolution}}",
+        "seconds": "{{seconds}}",
         "ratio": "{{aspect}}",
-        "images": "{{images}}"
+        "images": "{{images}}",
+        "audios": "{{audios}}",
+        "videos": "{{videos}}"
+      },
+      "jobPath": "id",
+      "pollEndpoint": "/videos/{{job}}",
+      "statusPath": "status",
+      "doneValues": [
+        "completed",
+        "succeeded",
+        "success"
+      ],
+      "failedValues": [
+        "failed",
+        "error"
+      ],
+      "resultPath": "video_url",
+      "timeout": 900
+    }
+  },
+  {
+    "id": "iooai:seedance2.5 LJ",
+    "label": "IOOAI · Seedance 2.5 LJ (Trọn Gói 4.50 Tệ · 1080p · 5–30s · Ảnh & Audio)",
+    "kind": "video",
+    "provider": "iooai",
+    "description": "Kênh đặc huệ Seedance 2.5 LJ trọn gói 4.5 Tệ, xuất video 1080p nét căng, nhận tối đa 9 ảnh và 3 audio tham chiếu (không hỗ trợ video).",
+    "config": {
+      "endpoint": "/videos",
+      "method": "POST",
+      "body": {
+        "model": "seedance2.5 LJ",
+        "prompt": "{{prompt}}",
+        "seconds": "{{seconds}}",
+        "ratio": "{{aspect}}",
+        "images": "{{images}}",
+        "audios": "{{audios}}"
+      },
+      "jobPath": "id",
+      "pollEndpoint": "/videos/{{job}}",
+      "statusPath": "status",
+      "doneValues": [
+        "completed",
+        "succeeded",
+        "success"
+      ],
+      "failedValues": [
+        "failed",
+        "error"
+      ],
+      "resultPath": "video_url",
+      "timeout": 900
+    }
+  },
+  {
+    "id": "iooai:seedance2.0 mini 全参",
+    "label": "IOOAI · Seedance 2.0 Mini 全参 (Trọn Gói 1.80 Tệ · 4–15s · Đủ Ảnh/Video/Audio)",
+    "kind": "video",
+    "provider": "iooai",
+    "description": "Bản Mini toàn diện 1.8 Tệ/lần (4–15s), hỗ trợ tối đa 9 ảnh, 3 video và 3 audio tham chiếu.",
+    "config": {
+      "endpoint": "/videos",
+      "method": "POST",
+      "body": {
+        "model": "seedance2.0 mini 全参",
+        "prompt": "{{prompt}}",
+        "seconds": "{{seconds}}",
+        "ratio": "{{aspect}}",
+        "images": "{{images}}",
+        "audios": "{{audios}}",
+        "videos": "{{videos}}"
+      },
+      "jobPath": "id",
+      "pollEndpoint": "/videos/{{job}}",
+      "statusPath": "status",
+      "doneValues": [
+        "completed",
+        "succeeded",
+        "success"
+      ],
+      "failedValues": [
+        "failed",
+        "error"
+      ],
+      "resultPath": "video_url",
+      "timeout": 900
+    }
+  },
+  {
+    "id": "iooai:seedance2.5 官渠",
+    "label": "IOOAI · Seedance 2.5 官渠 (Kênh Chính Thức ByteDance · 0.70 Tệ)",
+    "kind": "video",
+    "provider": "iooai",
+    "description": "Kênh chính hãng ByteDance trực tiếp qua IOOAI, độ phân giải cao và tính toàn vẹn nhân vật cao nhất.",
+    "config": {
+      "endpoint": "/videos",
+      "method": "POST",
+      "body": {
+        "model": "seedance2.5 官渠",
+        "prompt": "{{prompt}}",
+        "seconds": "{{seconds}}",
+        "ratio": "{{aspect}}",
+        "images": "{{images}}",
+        "audios": "{{audios}}",
+        "videos": "{{videos}}"
       },
       "jobPath": "id",
       "pollEndpoint": "/videos/{{job}}",
@@ -994,7 +1206,8 @@ const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
           "duration": "{{piapiDuration}}",
           "aspect_ratio": "{{piapiAspect}}",
           "resolution": "{{resolution}}",
-          "image_urls": "{{imageUrls}}"
+          "image_urls": "{{imageUrls}}",
+          "auto_upload_assets": true
         }
       },
       "jobPath": "data.task_id",
@@ -1648,7 +1861,7 @@ const PRESETS: Array<Omit<ModelRecord, "createdAt" | "builtin">> = [
 ];
 
 /** Bump when a preset's shape changes so existing installs pick it up. */
-const PRESET_VERSION = 19;
+const PRESET_VERSION = 24;
 
 export function seedModels(): void {
   const db = getDb();
