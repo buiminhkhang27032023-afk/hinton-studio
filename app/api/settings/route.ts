@@ -148,6 +148,8 @@ export async function PUT(request: Request) {
     autodlApiKey?: string;
     autodlBaseUrl?: string;
     autodlClearKey?: boolean;
+    elevenlabsApiKey?: string;
+    elevenlabsClearKey?: boolean;
     customProviders?: Array<{ id: string; name: string; baseUrl: string; apiKey: string; icon?: string }>;
   };
 

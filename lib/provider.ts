@@ -294,8 +294,12 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
       delete vars.videoUrl;
     } else if (Array.isArray(vars.videos) && vars.videos.length > 0) {
       if (midCheck.includes("可编辑") || midCheck.includes("seedance")) {
-        vars.videos = vars.videos.filter((u) => typeof u === "string" && /^https:\/\//i.test(u));
-        if (!vars.videos.length) delete vars.videos;
+        const filteredVids = (vars.videos as string[]).filter((u) => typeof u === "string" && /^https:\/\//i.test(u));
+        if (filteredVids.length > 0) {
+          vars.videos = filteredVids;
+        } else {
+          delete vars.videos;
+        }
       } else {
         delete vars.videos;
       }
@@ -317,8 +321,12 @@ async function attemptRun(input: RunModelInput): Promise<RunModelResult> {
     // Other models (Omni, MiniMax) do not accept audio fields.
     if (midCheck.includes("seedance") && Array.isArray(vars.audios) && vars.audios.length > 0) {
       // Keep vars.audios as an array of public HTTPS audio URLs for Seedance
-      vars.audios = vars.audios.filter((u) => typeof u === "string" && /^https:\/\//i.test(u));
-      if (!vars.audios.length) delete vars.audios;
+      const filteredAudios = (vars.audios as string[]).filter((u) => typeof u === "string" && /^https:\/\//i.test(u));
+      if (filteredAudios.length > 0) {
+        vars.audios = filteredAudios;
+      } else {
+        delete vars.audios;
+      }
     } else {
       delete vars.audios;
     }
